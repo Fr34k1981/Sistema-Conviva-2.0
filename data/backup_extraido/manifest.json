@@ -1,0 +1,56 @@
+{
+  "criado_em": "2026-08-20T19:56:48",
+  "versao": 2,
+  "arquivos": [
+    {
+      "path": "data/tutoria_cadastro.json",
+      "size": 74183,
+      "sha256": "0e60aaed7faebd8848cf430530dd8d1eb86993415a139dcd8430861359d07e29"
+    },
+    {
+      "path": "data/turmas/8º B.csv.xlsx",
+      "size": 11965,
+      "sha256": "73e8d9bc13cdbfe31a01765960bd920dbd2cd814e4c520b7daa566017a7bc4fe"
+    },
+    {
+      "path": "data/turmas/Prossores.xlsx",
+      "size": 10504,
+      "sha256": "a2a424cf9ab96e40b29ba0cb04ef37cc7a3444aa2988bc446826303ec2814379"
+    },
+    {
+      "path": "projeto/app.py",
+      "size": 1355208,
+      "sha256": "864e1ce3a020f04fda9b45a38cf9521f5045aafb86cecc9f6f8c78d65234884c"
+    },
+    {
+      "path": "projeto/requirements.txt",
+      "size": 185,
+      "sha256": "4d19ff5d575871d8d08923068c0088160c1d725f7c12ee5279a45abea4ef9c4c"
+    },
+    {
+      "path": "projeto/BACKUP_GUIDE.md",
+      "size": 5113,
+      "sha256": "657879eb36bafc3c578e4f7a8d6d35247d6a1c6dd3ab3f2b7bb17e12ec934477"
+    },
+    {
+      "path": "projeto/sql/supabase_estabilizacao_prova_mapao_conselho.sql",
+      "size": 5843,
+      "sha256": "e41e73c31e41a5e6c1f86ee07440210e373cf5cbc890d05ffd1dfd8976c0b9a0"
+    },
+    {
+      "path": "projeto/sql/supabase_relatorios_estudantes.sql",
+      "size": 3009,
+      "sha256": "b05694a7cb448d4d8cfa02d38c04b19c6381e1f838cb11068df83aec329f5807"
+    },
+    {
+      "path": "projeto/sql/supabase_turmas_config.sql",
+      "size": 1649,
+      "sha256": "ad1b4e5035830c8ddd3546db71feab1c0e5011de6f6aedc560e678927663d7d2"
+    },
+    {
+      "path": "projeto/sql/supabase_tutoria.sql",
+      "size": 1993,
+      "sha256": "d1dbdddcdca7203d9689d447188a2e5474acbe5b65130da182667fc57f18ce9a"
+    }
+  ]
+}

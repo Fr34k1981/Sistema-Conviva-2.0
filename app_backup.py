@@ -1,4 +1,4 @@
-﻿# VERSAO VISUAL DEFINITIVA - SED + UNICORNIO + ARCO-IRIS
+# VERSAO VISUAL DEFINITIVA - SED + UNICORNIO + ARCO-IRIS
 # ======================================================
 # IMPORTS PADRÃO
 # ======================================================
@@ -110,16 +110,19 @@ except ImportError:
 # ======================================================
 # VARIÁVEIS DE AMBIENTE
 # ======================================================
-# PostgreSQL local — não depende mais de credenciais Supabase
-SUPABASE_URL = None
-SUPABASE_KEY = None
-DATABASE_VALID = True
-SUPABASE_VALID = DATABASE_VALID
-
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SENHA_EXCLUSAO = os.getenv("SENHA_EXCLUSAO", "040600")
+SUPABASE_VALID = bool(SUPABASE_URL and SUPABASE_KEY)
 
 HEADERS = {}
-# Forçamos como True pois agora o "Supabase" é o nosso PostgreSQL local
-SUPABASE_VALID = True 
+if SUPABASE_VALID:
+    HEADERS = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "return=representation",
+    }
 
 
 # ======================================================
@@ -4741,535 +4744,146 @@ def exibir_assistente_sidebar():
             st.markdown(f"<div style='background:rgba(37,99,235,0.1);border-left:3px solid #2563eb;border-radius:8px;padding:0.6rem 0.8rem;font-size:0.8rem;color:#93c5fd;margin:0.4rem 0;'>{resposta}</div>", unsafe_allow_html=True)
         st.markdown("<div style='height:1px;background:rgba(255,255,255,0.06);margin:0.6rem 0;'></div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.72rem;color:#475569;line-height:1.8;'>💡 Busca inteligente nas ocorrências<br>📅 Agendamentos fixos na Grade Semanal<br>📥 Exporte relatórios em PDF ou Excel</div>", unsafe_allow_html=True)
-
+        # ======================================================
+# SUPABASE — FUNÇÕES BASE
 # ======================================================
-# POSTGRESQL LOCAL — SUBSTITUI SUPABASE
-# ======================================================
-import psycopg2
-from psycopg2.extras import execute_values
-from sqlalchemy import create_engine
-
-DB_HOST = "localhost"
-DB_PORT = 5436
-DB_NAME = "supabase_local"
-DB_USER = "postgres"
-DB_PASSWORD = "D3llc10s@1981!"  # ⚠️ Senha com caracteres especiais
-
-# Criação SEGURA do engine, evitando que o '@' da senha quebre a URL
-engine = create_engine(
-    "postgresql+psycopg2://",
-    connect_args={
-        "host": DB_HOST,
-        "port": DB_PORT,
-        "dbname": DB_NAME,
-        "user": DB_USER,
-        "password": DB_PASSWORD
-    }
-)
-
-# Flag de compatibilidade: sempre True agora que temos banco local
-SUPABASE_VALID = True
-
-
-def _parse_supabase_path(path: str):
-    """Converte caminhos no formato Supabase/PostgREST em parâmetros SQL PostgreSQL."""
-    from urllib.parse import unquote_plus
-
-    if "?" in path:
-        tabela, qs = path.split("?", 1)
-    else:
-        tabela, qs = path, ""
-
-    tabela = unquote_plus(tabela).strip().strip("/")
-
-    params = {
-        "select": "*",
-        "where": [],
-        "where_values": [],
-        "order": [],
-        "limit": None,
-        "on_conflict": None,
-    }
-
-    if not tabela:
-        raise ValueError("Tabela não informada.")
-
-    # Protege o nome da tabela contra caracteres inesperados.
-    if not all(
-        parte.replace("_", "").isalnum()
-        for parte in tabela.split(".")
-    ):
-        raise ValueError(f"Nome de tabela inválido: {tabela}")
-
-    if qs:
-        for part in qs.split("&"):
-            if "=" not in part:
-                continue
-
-            k, v = part.split("=", 1)
-            k = unquote_plus(k.strip())
-            v = unquote_plus(v.strip())
-
-            if k == "select":
-                params["select"] = v or "*"
-
-            elif k == "order":
-                for item in v.split(","):
-                    item = item.strip()
-                    if not item:
-                        continue
-
-                    partes = item.split(".")
-                    coluna = partes[0].strip()
-
-                    if not coluna.replace("_", "").isalnum():
-                        raise ValueError(f"Coluna de ordenação inválida: {coluna}")
-
-                    direcao = "ASC"
-
-                    if len(partes) > 1:
-                        if partes[1].lower() == "desc":
-                            direcao = "DESC"
-                        elif partes[1].lower() == "asc":
-                            direcao = "ASC"
-
-                    params["order"].append(f"{coluna} {direcao}")
-
-            elif k == "limit":
-                try:
-                    params["limit"] = int(v)
-                except ValueError:
-                    pass
-
-            elif k == "on_conflict":
-                params["on_conflict"] = [
-                    c.strip()
-                    for c in v.split(",")
-                    if c.strip()
-                ]
-
-            else:
-                # eq.valor
-                if v.startswith("eq."):
-                    params["where"].append(f"{k} = %s")
-                    params["where_values"].append(v[3:])
-
-                # neq.valor
-                elif v.startswith("neq."):
-                    params["where"].append(f"{k} <> %s")
-                    params["where_values"].append(v[4:])
-
-                # gt.valor
-                elif v.startswith("gt."):
-                    params["where"].append(f"{k} > %s")
-                    params["where_values"].append(v[3:])
-
-                # gte.valor
-                elif v.startswith("gte."):
-                    params["where"].append(f"{k} >= %s")
-                    params["where_values"].append(v[4:])
-
-                # lt.valor
-                elif v.startswith("lt."):
-                    params["where"].append(f"{k} < %s")
-                    params["where_values"].append(v[3:])
-
-                # lte.valor
-                elif v.startswith("lte."):
-                    params["where"].append(f"{k} <= %s")
-                    params["where_values"].append(v[4:])
-
-                # in.(A,B,C)
-                elif v.startswith("in."):
-                    vals_str = v[3:].strip()
-
-                    if vals_str.startswith("(") and vals_str.endswith(")"):
-                        vals_str = vals_str[1:-1]
-
-                    vals = [
-                        x.strip()
-                        for x in vals_str.split(",")
-                        if x.strip() != ""
-                    ]
-
-                    if vals:
-                        placeholders = ",".join(["%s"] * len(vals))
-                        params["where"].append(
-                            f"{k} IN ({placeholders})"
-                        )
-                        params["where_values"].extend(vals)
-
-                # not.is.null
-                elif v == "not.is.null":
-                    params["where"].append(f"{k} IS NOT NULL")
-
-                # is.null
-                elif v == "is.null":
-                    params["where"].append(f"{k} IS NULL")
-
-                # ilike.valor
-                elif v.startswith("ilike."):
-                    params["where"].append(f"{k} ILIKE %s")
-                    params["where_values"].append(v[6:])
-
-                # like.valor
-                elif v.startswith("like."):
-                    params["where"].append(f"{k} LIKE %s")
-                    params["where_values"].append(v[5:])
-
-    return tabela, params
-
-
-class _MockResponse:
-    """Simula requests.Response para manter compatibilidade com o app."""
-
-    def __init__(self, status_code=200, payload=None):
-        self.status_code = status_code
-        self._payload = payload if payload is not None else []
-
-    def json(self):
-        return self._payload
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise Exception(
-                f"HTTP {self.status_code}: {self._payload}"
-            )
-
-    @property
-    def text(self):
-        return str(self._payload)
-
 
 def _supabase_request(method: str, path: str, **kwargs):
-    """
-    Camada de compatibilidade.
+    """Função central de request para o Supabase."""
+    if not SUPABASE_VALID:
+        raise ErroConexaoDB("Supabase não configurado. Verifique SUPABASE_URL e SUPABASE_KEY.")
+    url = f"{SUPABASE_URL}/rest/v1/{path}"
+    headers_extra = kwargs.pop("headers", None) or {}
+    headers = dict(HEADERS)
+    headers.update(headers_extra)
+    response = requests.request(method, url, headers=headers, timeout=15, **kwargs)
+    if response.status_code >= 400:
+        logger.error(f"Erro Supabase ({response.status_code}): {response.text}")
+        response.raise_for_status()
+    return response
 
-    O app continua utilizando chamadas no padrão Supabase/PostgREST,
-    mas todas as operações são executadas EXCLUSIVAMENTE no PostgreSQL local.
-    """
+# ======================================================
+# CACHE HÍBRIDO PARA REDUZIR EGRESS DO SUPABASE
+# ======================================================
+# Problema identificado: o limite crítico do Free não é o banco cheio, mas Egress.
+# Portanto, a prioridade é evitar GET repetido de tabela inteira a cada rerun/clique.
+# Este cache usa duas camadas:
+# 1) st.cache_data: rápido, em memória do processo do Streamlit.
+# 2) arquivo local compactado: fica no servidor do app (/tmp no Cloud), não no PC do usuário
+#    e não no Supabase. É temporário, mas reduz novas leituras enquanto a instância está ativa.
+import hashlib
+import gzip
+import time
 
-    data = kwargs.get("json") if "json" in kwargs else kwargs.get("data")
+CACHE_LOCAL_ATIVO = os.getenv("CONVIVA_CACHE_LOCAL", "1") != "0"
+CACHE_LOCAL_TTL_SEGUNDOS = int(os.getenv("CONVIVA_CACHE_LOCAL_TTL", "21600"))  # 6 horas
+CACHE_LOCAL_DIR = Path(os.getenv("CONVIVA_CACHE_DIR", "/tmp/conviva_supabase_cache"))
+try:
+    CACHE_LOCAL_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    CACHE_LOCAL_ATIVO = False
 
-    tabela, params = _parse_supabase_path(path)
+def _cache_key_supabase(path: str) -> str:
+    return hashlib.sha256(str(path).encode("utf-8")).hexdigest()
 
+def _cache_path_supabase(path: str) -> Path:
+    return CACHE_LOCAL_DIR / f"{_cache_key_supabase(path)}.json.gz"
+
+def _ler_cache_local_supabase(path: str, permitir_expirado: bool = False):
+    if not CACHE_LOCAL_ATIVO:
+        return None
     try:
-        # ==================================================
-        # GET
-        # ==================================================
-        if method.upper() == "GET":
-
-            select_clause = params["select"].strip()
-
-            if select_clause == "*":
-                select_clause = "*"
-
-            sql = f"SELECT {select_clause} FROM {tabela}"
-
-            if params["where"]:
-                sql += " WHERE " + " AND ".join(params["where"])
-
-            if params["order"]:
-                sql += " ORDER BY " + ", ".join(params["order"])
-
-            if params["limit"] is not None:
-                sql += f" LIMIT {int(params['limit'])}"
-
-            where_values = params.get("where_values") or []
-            params_sql = tuple(where_values) if where_values else None
-
-            df = pd.read_sql(
-                sql,
-                engine,
-                params=params_sql
-            )
-
-            return _MockResponse(
-                200,
-                df.to_dict(orient="records")
-            )
-
-        # ==================================================
-        # POST / INSERT / UPSERT
-        # ==================================================
-        elif method.upper() == "POST":
-
-            if data is None:
-                return _MockResponse(
-                    400,
-                    {"error": "no data"}
-                )
-
-            registros = (
-                [data]
-                if isinstance(data, dict)
-                else list(data)
-            )
-
-            if not registros:
-                return _MockResponse(201, [])
-
-            conn = engine.raw_connection()
-
-            try:
-                cur = conn.cursor()
-
-                # União das colunas de todos os registros.
-                cols = []
-                for registro in registros:
-                    for coluna in registro.keys():
-                        if coluna not in cols:
-                            cols.append(coluna)
-
-                if not cols:
-                    return _MockResponse(
-                        400,
-                        {"error": "registro sem colunas"}
-                    )
-
-                col_list = ",".join(cols)
-
-                values = [
-                    tuple(registro.get(coluna) for coluna in cols)
-                    for registro in registros
-                ]
-
-                if params.get("on_conflict"):
-
-                    conflict_cols = params["on_conflict"]
-
-                    update_cols = [
-                        coluna
-                        for coluna in cols
-                        if coluna not in conflict_cols
-                    ]
-
-                    if update_cols:
-
-                        update_set = ",".join(
-                            [
-                                f"{coluna} = EXCLUDED.{coluna}"
-                                for coluna in update_cols
-                            ]
-                        )
-
-                        sql = (
-                            f"INSERT INTO {tabela} "
-                            f"({col_list}) VALUES %s "
-                            f"ON CONFLICT "
-                            f"({','.join(conflict_cols)}) "
-                            f"DO UPDATE SET {update_set}"
-                        )
-
-                    else:
-
-                        sql = (
-                            f"INSERT INTO {tabela} "
-                            f"({col_list}) VALUES %s "
-                            f"ON CONFLICT "
-                            f"({','.join(conflict_cols)}) "
-                            f"DO NOTHING"
-                        )
-
-                else:
-
-                    sql = (
-                        f"INSERT INTO {tabela} "
-                        f"({col_list}) VALUES %s"
-                    )
-
-                execute_values(
-                    cur,
-                    sql,
-                    values
-                )
-
-                conn.commit()
-
-                cur.close()
-
-            finally:
-                conn.close()
-
-            _limpar_cache_supabase_completo()
-
-            return _MockResponse(
-                201,
-                registros
-            )
-
-        # ==================================================
-        # PATCH / UPDATE
-        # ==================================================
-        elif method.upper() == "PATCH":
-
-            if data is None:
-                return _MockResponse(
-                    400,
-                    {"error": "no data"}
-                )
-
-            if not isinstance(data, dict) or not data:
-                return _MockResponse(
-                    400,
-                    {"error": "dados inválidos"}
-                )
-
-            conn = engine.raw_connection()
-
-            try:
-                cur = conn.cursor()
-
-                set_clause = ",".join(
-                    [
-                        f"{coluna} = %s"
-                        for coluna in data.keys()
-                    ]
-                )
-
-                sql = (
-                    f"UPDATE {tabela} "
-                    f"SET {set_clause}"
-                )
-
-                if params["where"]:
-                    sql += (
-                        " WHERE "
-                        + " AND ".join(params["where"])
-                    )
-
-                values = (
-                    list(data.values())
-                    + (params.get("where_values") or [])
-                )
-
-                cur.execute(sql, values)
-
-                conn.commit()
-
-                cur.close()
-
-            finally:
-                conn.close()
-
-            _limpar_cache_supabase_completo()
-
-            return _MockResponse(
-                200,
-                [data]
-            )
-
-        # ==================================================
-        # DELETE
-        # ==================================================
-        elif method.upper() == "DELETE":
-
-            conn = engine.raw_connection()
-
-            try:
-                cur = conn.cursor()
-
-                sql = f"DELETE FROM {tabela}"
-
-                if params["where"]:
-                    sql += (
-                        " WHERE "
-                        + " AND ".join(params["where"])
-                    )
-
-                where_values = (
-                    params.get("where_values") or []
-                )
-
-                cur.execute(
-                    sql,
-                    where_values
-                )
-
-                conn.commit()
-
-                cur.close()
-
-            finally:
-                conn.close()
-
-            _limpar_cache_supabase_completo()
-
-            return _MockResponse(
-                204,
-                []
-            )
-
-        else:
-
-            return _MockResponse(
-                405,
-                {
-                    "error":
-                    f"Método {method} não suportado"
-                }
-            )
-
+        arq = _cache_path_supabase(path)
+        if not arq.exists():
+            return None
+        idade = time.time() - arq.stat().st_mtime
+        if idade > CACHE_LOCAL_TTL_SEGUNDOS and not permitir_expirado:
+            return None
+        with gzip.open(arq, "rt", encoding="utf-8") as f:
+            payload = json.load(f)
+        if not isinstance(payload, list):
+            return None
+        return payload
     except Exception as e:
+        logger.warning(f"Falha ao ler cache local Supabase: {e}")
+        return None
 
-        logger.error(
-            f"Erro PostgreSQL ({method} {path}): {e}"
-        )
-
-        return _MockResponse(
-            500,
-            {"error": str(e)}
-        )
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _supabase_get_dataframe(path: str, acao: str) -> pd.DataFrame:
-    """Carrega DataFrame do PostgreSQL local (cache em memória do Streamlit)."""
+def _gravar_cache_local_supabase(path: str, payload):
+    if not CACHE_LOCAL_ATIVO:
+        return
     try:
-        resp = _supabase_request("GET", path)
-        if resp.status_code >= 400:
-            raise ErroCarregamentoDados(acao, resp.text)
-        return pd.DataFrame(resp.json())
-    except ErroConexaoDB:
-        raise
-    except ErroCarregamentoDados:
-        raise
+        if not isinstance(payload, list):
+            return
+        arq = _cache_path_supabase(path)
+        tmp = arq.with_suffix(".tmp")
+        with gzip.open(tmp, "wt", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(tmp, arq)
     except Exception as e:
-        raise ErroCarregamentoDados(acao, str(e))
+        logger.warning(f"Falha ao gravar cache local Supabase: {e}")
 
-
-def _supabase_mutation(method: str, path: str, data, acao: str) -> bool:
-    """POST/PATCH/DELETE no PostgreSQL local."""
+def _limpar_cache_local_supabase():
     try:
-        resp = _supabase_request(method, path, json=data)
-        return resp.status_code in (200, 201, 204)
-    except ErroConexaoDB:
-        raise
+        if CACHE_LOCAL_DIR.exists():
+            for arq in CACHE_LOCAL_DIR.glob("*.json.gz"):
+                try:
+                    arq.unlink()
+                except Exception:
+                    pass
     except Exception as e:
-        raise ErroOperacaoDB(acao, str(e))
-
+        logger.warning(f"Falha ao limpar cache local Supabase: {e}")
 
 def _limpar_cache_supabase_completo():
-    """Limpa o cache em memória do Streamlit após qualquer mutação."""
+    """Limpa cache de memória e cache local após qualquer gravação/exclusão."""
     try:
         _supabase_get_dataframe.clear()
     except Exception:
         pass
+    _limpar_cache_local_supabase()
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def _supabase_get_dataframe(path: str, acao: str) -> pd.DataFrame:
+    """Retorna DataFrame do Supabase com cache híbrido para reduzir egress.
 
-# Stubs de compatibilidade — o cache híbrido em /tmp não é mais necessário
-# com PostgreSQL local, mas mantemos as funções para não quebrar chamadas restantes.
-CACHE_LOCAL_ATIVO = False
+    Regras:
+    - Primeiro tenta arquivo local recente no servidor.
+    - Se não existir, consulta Supabase e salva cópia compactada.
+    - Se o Supabase falhar, usa cache local expirado como fallback somente leitura.
+    """
+    try:
+        payload_cache = _ler_cache_local_supabase(path)
+        if payload_cache is not None:
+            return pd.DataFrame(payload_cache)
 
-def _limpar_cache_local_supabase():
-    pass
+        response = _supabase_request("GET", path)
+        payload = response.json()
+        _gravar_cache_local_supabase(path, payload)
+        return pd.DataFrame(payload)
+    except ErroConexaoDB:
+        raise
+    except Exception as e:
+        payload_stale = _ler_cache_local_supabase(path, permitir_expirado=True)
+        if payload_stale is not None:
+            logger.warning(f"Usando cache local expirado para {acao}: {e}")
+            return pd.DataFrame(payload_stale)
+        raise ErroCarregamentoDados(acao, str(e))
 
-def _gravar_cache_local_supabase(path, payload):
-    pass
-
-def _ler_cache_local_supabase(path, permitir_expirado=False):
-    return None
-   
-# ======================================================
+def _supabase_mutation(method: str, path: str, data, acao: str) -> bool:
+    """POST / PATCH / DELETE genérico. Toda mutação invalida os caches de leitura."""
+    try:
+        kwargs = {}
+        if data is not None:
+            kwargs["json"] = data
+        response = _supabase_request(method, path, **kwargs)
+        sucesso = response.status_code in (200, 201, 204)
+        if sucesso:
+            _limpar_cache_supabase_completo()
+        return sucesso
+    except ErroConexaoDB:
+        raise
+    except Exception as e:
+        raise ErroOperacaoDB(acao, str(e))
+    # ======================================================
 # ALUNOS
 # ======================================================
 
@@ -6526,123 +6140,60 @@ def carregar_agendamentos_filtrado(data_ini: str, data_fim: str, espaco: str = N
         st.warning(f"Falha ao consultar agendamentos: {e}")
         return pd.DataFrame()
 
-def _rest_get_agend(path: str, params: list = None, timeout: int = 20):
-    try:
-        query_parts = []
-
-        if params:
-            for chave, valor in params:
-                query_parts.append(f"{chave}={valor}")
-
-        query = "&".join(query_parts)
-
-        tabela = path.replace("/rest/v1/", "").strip("/")
-        caminho = f"{tabela}?{query}" if query else tabela
-
-        resposta = _supabase_request("GET", caminho)
-
-        resposta.raise_for_status()
-        return resposta.json()
-
-    except Exception as e:
-        raise Exception(f"Erro ao consultar PostgreSQL local: {e}")
+def _rest_get_agend(path: str, params: dict = None, timeout: int = 20):
+    url = f"{SUPABASE_URL}{path}"
+    r = requests.get(url, headers=HEADERS, params=params or {}, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
 
 def salvar_agendamento_api(dados: dict):
-    """Salva um agendamento no PostgreSQL local."""
-    try:
-        sucesso = _supabase_mutation("POST", "agendamentos", dados, "salvar agendamento")
-        return sucesso, None
-    except Exception as e:
-        # Fallback: tenta salvar sem a coluna 'tipo' caso ela não exista no banco
-        erro_str = str(e).lower()
-        if "tipo" in erro_str and "column" in erro_str:
-            try:
-                dados_retry = dict(dados)
-                dados_retry.pop("tipo", None)
-                sucesso = _supabase_mutation("POST", "agendamentos", dados_retry, "salvar agendamento (sem tipo)")
-                return sucesso, None
-            except Exception as e2:
-                logger.error(f"Erro ao salvar agendamento (retry sem tipo): {e2}")
-                return False, str(e2)
-        logger.error(f"Erro ao salvar agendamento: {e}")
-        return False, str(e)
+    url = f"{SUPABASE_URL}/rest/v1/agendamentos"
+    r = requests.post(url, json=dados, headers=HEADERS, timeout=20)
+    # Compatibilidade: algumas bases não possuem a coluna 'tipo'
+    if r.status_code >= 400 and "tipo" in str(dados).lower() and "'tipo' column" in r.text:
+        dados_retry = dict(dados)
+        dados_retry.pop("tipo", None)
+        r = requests.post(url, json=dados_retry, headers=HEADERS, timeout=20)
+    if r.status_code not in (200, 201):
+        return False, f"{r.status_code} - {r.text}"
+    return True, r.json()
 
 def cancelar_agendamento_api(id_agend: str):
-    """Cancela um agendamento no PostgreSQL local."""
-    try:
-        sucesso = _supabase_mutation(
-            "PATCH",
-            f"agendamentos?id=eq.{id_agend}",
-            {"status": "CANCELADO"},
-            "cancelar agendamento"
-        )
-        return sucesso, None
-    except Exception as e:
-        logger.error(f"Erro ao cancelar agendamento {id_agend}: {e}")
-        return False, str(e)
-
+    url = f"{SUPABASE_URL}/rest/v1/agendamentos?id=eq.{id_agend}"
+    r = requests.patch(url, json={"status": "CANCELADO"}, headers=HEADERS, timeout=20)
+    return r.status_code in (200, 204), None
 
 def excluir_agendamento_api(id_agend: str):
-    """Marca um agendamento como excluído pela gestão no PostgreSQL local."""
-    try:
-        sucesso = _supabase_mutation(
-            "PATCH",
-            f"agendamentos?id=eq.{id_agend}",
-            {"status": "EXCLUIDO_GESTAO"},
-            "excluir agendamento"
-        )
-        return sucesso, None
-    except Exception as e:
-        logger.error(f"Erro ao excluir agendamento {id_agend}: {e}")
-        return False, str(e)
-
+    url = f"{SUPABASE_URL}/rest/v1/agendamentos?id=eq.{id_agend}"
+    r = requests.patch(url, json={"status": "EXCLUIDO_GESTAO"}, headers=HEADERS, timeout=20)
+    return r.status_code in (200, 204), None
 
 def verificar_conflito_api(data_yyyy_mm_dd: str, horario: str, espaco: str):
-    """Verifica conflito de agendamento no PostgreSQL local."""
     try:
-        df = _supabase_get_dataframe(
-            f"agendamentos?select=id,professor_nome,prioridade&data_agendamento=eq.{data_yyyy_mm_dd}&horario=eq.{horario}&espaco=eq.{espaco}&status=eq.ATIVO&limit=1",
-            "verificar conflito"
-        )
-        if not df.empty:
-            return df.iloc[0].to_dict()
-        return None
+        path = f"/rest/v1/agendamentos?select=id,professor_nome,prioridade&data_agendamento=eq.{data_yyyy_mm_dd}&horario=eq.{horario}&espaco=eq.{espaco}&status=eq.ATIVO&limit=1"
+        rows = _rest_get_agend(path)
+        return rows[0] if rows else None
     except Exception:
         return None
 
-
 def prof_list_agend(only_active: bool = True) -> pd.DataFrame:
-    """Lista professores do PostgreSQL local."""
     try:
-        df = _supabase_get_dataframe(
-            "professores?select=id,nome,email,cargo&order=nome.asc",
-            "listar professores"
-        )
+        path = "/rest/v1/professores?select=id,nome,email,cargo&order=nome.asc"
+        rows = _rest_get_agend(path)
+        df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["id", "nome", "email", "cargo"])
         if not df.empty and 'cargo' in df.columns:
             df['status'] = 'ATIVO'
         return df
     except Exception:
         return pd.DataFrame(columns=["id", "nome", "email", "cargo", "status"])
 
-
 def prof_upsert_agend(nome: str, email: str, status: str = "ATIVO"):
-    """Insere ou atualiza professor no PostgreSQL local (UPSERT)."""
-    payload = {
-        "nome": (nome or "").strip(),
-        "email": (email or "").strip(),
-        "cargo": "Professor"
-    }
-    try:
-        sucesso = _supabase_mutation(
-            "POST",
-            "professores?on_conflict=email",
-            payload,
-            "upsert professor"
-        )
-        return sucesso, payload if sucesso else None
-    except Exception as e:
-        logger.error(f"Erro ao fazer upsert de professor: {e}")
-        return False, None
+    payload = {"nome": (nome or "").strip(), "email": (email or "").strip(), "cargo": "Professor"}
+    url = f"{SUPABASE_URL}/rest/v1/professores"
+    headers_upsert = HEADERS.copy()
+    headers_upsert["Prefer"] = "resolution=merge-duplicates,return=representation"
+    r = requests.post(url, json=payload, headers=headers_upsert, timeout=20)
+    return r.status_code in (200, 201), r.json() if r.status_code in (200, 201) else None
 # ======================================================
 # ELETIVAS — IMPORTAÇÃO EXCEL
 # ======================================================
@@ -6813,7 +6364,7 @@ def carregar_eletivas_supabase_segura(contexto: str = "carregar eletivas") -> pd
     if not SUPABASE_VALID:
         return pd.DataFrame()
     consultas = [
-        "eletivas?select=professora,nome_aluno,serie&limit=50000",
+        "eletivas?select=professora,nome_aluno,serie,ra&limit=50000",
         "eletivas?select=professora,nome_aluno,serie&limit=50000",
         "eletivas?select=*&limit=50000",
     ]
@@ -7276,7 +6827,7 @@ def carregar_tutoria_backups_json_supabase_segura() -> dict:
     if not SUPABASE_VALID:
         return {}
     consultas = [
-        "tutoria_backups_json?select=*&order=criado_em.desc&limit=30",
+        "tutoria_backups_json?select=*&order=created_at.desc&limit=30",
         "tutoria_backups_json?select=*&order=id.desc&limit=30",
         "tutoria_backups_json?select=*&limit=30",
     ]
@@ -7298,37 +6849,28 @@ def carregar_tutoria_backups_json_supabase_segura() -> dict:
 
 
 def salvar_tutoria_backup_json_supabase_seguro(tutoria_dict: dict, origem: str = "app"):
-    """Salva um backup da tutoria na tabela local tutoria_backups_json.
+    """Cria backup JSON no Supabase sem interferir na tabela principal.
 
-    Compatível com o esquema PostgreSQL atual:
-    id, criado_em, motivo, total_registros, dados.
+    É tolerante a schema: tenta campos comuns e ignora se a tabela não aceitar.
     """
     if not SUPABASE_VALID:
         return
-
     base = normalizar_base_tutoria(tutoria_dict or {})
-
-    total = total_estudantes_tutoria(base)
-
-    if total == 0:
+    if total_estudantes_tutoria(base) == 0:
         return
+    payloads = [
+        {"origem": origem, "dados": base},
+        {"origem": origem, "tutoria": base},
+        {"conteudo": json.dumps(base, ensure_ascii=False), "origem": origem},
+        {"json": base},
+    ]
+    for payload in payloads:
+        try:
+            _supabase_request("POST", "tutoria_backups_json", json=payload)
+            return
+        except Exception:
+            continue
 
-    payload = {
-        "motivo": str(origem or "app"),
-        "total_registros": int(total),
-        "dados": base,
-    }
-
-    try:
-        _supabase_request(
-            "POST",
-            "tutoria_backups_json",
-            json=payload,
-        )
-    except Exception as e:
-        logger.warning(
-            f"Nao foi possivel salvar backup JSON da tutoria: {e}"
-        )
 
 def montar_dataframe_eletiva(nome_professora: str, df_alunos: pd.DataFrame, eletivas_dict: dict) -> pd.DataFrame:
     registros = []
@@ -13394,7 +12936,7 @@ def _carregar_mapao_local() -> pd.DataFrame:
     fontes = []
     if SUPABASE_VALID:
         try:
-            df_sup = _supabase_get_dataframe("mapao_resultados?select=ano_letivo,bimestre,turma,ciclo,turno,estudante,situacao,frequencia_percentual,faltas,faltas_anuais,notas_abaixo_cinco,componentes,total_aulas,arquivo_origem,created_at&limit=10000", "carregar mapão")
+            df_sup = _supabase_get_dataframe("mapao_resultados?select=ano_letivo,bimestre,turma,ciclo,turno,estudante,ra,situacao,frequencia_percentual,frequencia,faltas,faltas_anuais,notas_abaixo_cinco,componentes,total_aulas,arquivo_origem,created_at&limit=10000", "carregar mapão")
             if not df_sup.empty:
                 df_sup = df_sup.rename(columns={
                     "estudante": "Estudante",
@@ -13572,7 +13114,7 @@ def _carregar_mapao_local() -> pd.DataFrame:
     if SUPABASE_VALID:
         try:
             df_sup = _supabase_get_dataframe(
-                "mapao_resultados?select=ano_letivo,bimestre,turma,ciclo,turno,estudante,situacao,frequencia_percentual,faltas,faltas_anuais,notas_abaixo_cinco,componentes,total_aulas,arquivo_origem,created_at&limit=10000",
+                "mapao_resultados?select=ano_letivo,bimestre,turma,ciclo,turno,estudante,ra,situacao,frequencia_percentual,frequencia,faltas,faltas_anuais,notas_abaixo_cinco,componentes,total_aulas,arquivo_origem,created_at&limit=10000",
                 "carregar mapão",
             )
             if isinstance(df_sup, pd.DataFrame) and not df_sup.empty:
@@ -16835,7 +16377,7 @@ elif "ALUNOS E TURMAS" in normalizar_texto(menu) or "IMPORTAR ALUNOS" in normali
                                 "nome": nome.strip(),
                                 "turma": turma.strip(),
                                 "situacao": situacao,
-
+                                "responsavel": responsavel.strip() if responsavel else None,
                             }
 
                             if salvar_aluno(aluno):
@@ -16895,7 +16437,7 @@ elif "ALUNOS E TURMAS" in normalizar_texto(menu) or "IMPORTAR ALUNOS" in normali
                                 "nome": novo_nome.strip(),
                                 "turma": nova_turma.strip(),
                                 "situacao": nova_situacao,
-
+                                "responsavel": novo_responsavel.strip() if novo_responsavel else None,
                             }
 
                             if atualizar_aluno(str(aluno_info["ra"]), dados_atualizados):
@@ -16925,9 +16467,9 @@ elif "ALUNOS E TURMAS" in normalizar_texto(menu) or "IMPORTAR ALUNOS" in normali
                                 senha = st.text_input("Digite a senha para confirmar:", type="password", key="senha_excluir_aluno_tab3")
                                 if st.button("✅ Confirmar Exclusão", type="primary", key="confirm_excluir_aluno_tab3"):
                                     if senha == SENHA_EXCLUSAO:
-                                        resposta_exclusao = _supabase_mutation("DELETE", f"alunos?ra=eq.{ra_excluir}", None, "excluir aluno")
-                                        r = type("R", (), {"status_code": 204})()
-                                        if resposta_exclusao:
+                                        url = f"{SUPABASE_URL}/rest/v1/alunos?ra=eq.{ra_excluir}"
+                                        r = requests.delete(url, headers=HEADERS, timeout=20)
+                                        if r.status_code in (200, 204):
                                             st.success(f"✅ Aluno {aluno_excluir['nome']} excluído!")
                                             carregar_alunos.clear()
                                             del st.session_state.confirmar_exclusao_aluno
@@ -22511,59 +22053,52 @@ elif menu == "📅 Agendamento de Espaços":
                 else:
                     st.info("Nenhum log registrado")
     
-            # ======================================================
-        # ABA 9: MANUTENÇÃO
-        # ======================================================
-        with tabs_agend[8]:
-            st.subheader("🧹 Manutenção / Limpeza")
+    # ======================================================
+    # ABA 9: MANUTENÇÃO
+    # ======================================================
+    with tabs_agend[8]:
+        st.subheader("🧹 Manutenção / Limpeza")
+        
+        if not st.session_state.gestao_logado:
+            st.warning("🔒 Acesso restrito à Gestão (faça login na aba ⚙️ Gestão)")
+        else:
+            st.info("Remove definitivamente CANCELADO/EXCLUIDO_GESTAO anteriores à data de corte.")
             
-            if not st.session_state.gestao_logado:
-                st.warning("🔒 Acesso restrito à Gestão (faça login na aba ⚙️ Gestão)")
-            else:
-                st.info("Remove definitivamente CANCELADO/EXCLUIDO_GESTAO anteriores à data de corte.")
-                
-                dias = st.number_input("Remover registros anteriores a (dias):", min_value=7, max_value=3650, value=180)
-                
-                # Preview do que será excluído
-                cutoff = (datetime.now().date() - timedelta(days=int(dias))).strftime("%Y-%m-%d")
-                
-                if st.button("🔍 Visualizar registros a excluir"):
-                    try:
-                        df_preview = _supabase_get_dataframe(
-                            f"agendamentos?select=id,data_agendamento,espaco,professor_nome,status&status=in.(CANCELADO,EXCLUIDO_GESTAO)&data_agendamento=lt.{cutoff}&limit=50",
-                            "visualizar registros para exclusão"
-                        )
-                        if not df_preview.empty:
+            dias = st.number_input("Remover registros anteriores a (dias):", min_value=7, max_value=3650, value=180)
+            
+            # Preview do que será excluído
+            cutoff = (datetime.now().date() - timedelta(days=int(dias))).strftime("%Y-%m-%d")
+            
+            if st.button("🔍 Visualizar registros a excluir"):
+                try:
+                    url = f"{SUPABASE_URL}/rest/v1/agendamentos?select=id,data_agendamento,espaco,professor_nome,status&status=in.(CANCELADO,EXCLUIDO_GESTAO)&data_agendamento=lt.{cutoff}&limit=50"
+                    r = requests.get(url, headers=HEADERS, timeout=20)
+                    if r.status_code == 200:
+                        dados = r.json()
+                        if dados:
+                            df_preview = pd.DataFrame(dados)
                             st.warning(f"⚠️ {len(df_preview)} registros serão excluídos (mostrando até 50):")
                             st.dataframe(df_preview, use_container_width=True, hide_index=True)
                         else:
                             st.success("✅ Nenhum registro para excluir!")
-                    except Exception as e:
-                        st.error(f"❌ Erro: {e}")
-
-                if st.button("🧹 Executar limpeza agora", type="primary"):
-                    try:
-                        sucesso = _supabase_mutation(
-                            "DELETE",
-                            f"agendamentos?status=in.(CANCELADO,EXCLUIDO_GESTAO)&data_agendamento=lt.{cutoff}",
-                            None,
-                            "limpeza de agendamentos antigos"
-                        )
-                        if sucesso:
-                            st.success(f"✅ Limpeza concluída! (corte: {cutoff})")
-                            registrar_log("LIMPEZA", "Gestão", f"Excluídos registros anteriores a {cutoff}")
-                            show_toast_agend("Limpeza concluída com sucesso!", "success")
-                            carregar_agendamentos_filtrado.clear()
-                        else:
-                            st.error("❌ Não foi possível executar a limpeza")
-                    except Exception as e:
-                        st.error(f"❌ Erro: {e}")
-
-# ======================================================
-# FIM DA ABA DE MANUTENÇÃO
-# O bloco abaixo deve ficar no mesmo nível de indentação 
-# dos seus "if menu == ..." ou "elif menu == ..." principais
-# ======================================================
+                    else:
+                        st.error("❌ Erro ao consultar registros")
+                except Exception as e:
+                    st.error(f"❌ Erro: {e}")
+            
+            if st.button("🧹 Executar limpeza agora", type="primary"):
+                try:
+                    url = f"{SUPABASE_URL}/rest/v1/agendamentos?status=in.(CANCELADO,EXCLUIDO_GESTAO)&data_agendamento=lt.{cutoff}"
+                    r = requests.delete(url, headers=HEADERS, timeout=20)
+                    if r.status_code in (200, 204):
+                        st.success(f"✅ Limpeza concluída! (corte: {cutoff})")
+                        registrar_log("LIMPEZA", "Gestão", f"Excluídos registros anteriores a {cutoff}")
+                        show_toast_agend("Limpeza concluída com sucesso!", "success")
+                        carregar_agendamentos_filtrado.clear()
+                    else:
+                        st.error(f"❌ Erro: {r.status_code}")
+                except Exception as e:
+                    st.error(f"❌ Falha: {e}")
 else:
     page_header("Página não encontrada", "A página selecionada não possui um bloco de renderização ativo.", "#dc2626")
     st.error(f"Não foi possível exibir o conteúdo de: {menu}")
@@ -22571,15 +22106,3 @@ else:
     if st.button("Voltar para o Dashboard", type="primary", key="voltar_dashboard_fallback"):
         st.session_state.pagina_atual = "🏠 Dashboard"
         st.rerun()
-
-
-
-
-
-
-
-
-
-
-
-

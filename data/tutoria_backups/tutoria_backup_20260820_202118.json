@@ -76,242 +76,36 @@
       }
     ]
   },
-  "Igor Ferreira": {
-    "nome": "Igor Ferreira",
-    "tipo": "Professor(a)",
-    "espaco": "",
+  "Aleandro Ferreira dos Santos": {
+    "nome": "Aleandro Ferreira dos Santos",
+    "tipo": "Professor/  CGPC",
+    "espaco": "Coordenação",
     "horario": "13:10 às 14:00",
     "dia": "Quartas-feiras",
     "alunos": [
       {
-        "nome": "MARIA CLARA DE SOUZA ROSA",
-        "serie": "7º Ano A"
+        "nome": "RAFAELLE HILLARY DE OLIVEIRA SOUZA",
+        "serie": "8º ano B"
       },
       {
-        "nome": "BRIAN SANTOS FERREIRA",
-        "serie": "6º Ano B"
-      },
-      {
-        "nome": "CLARA KEVELLYN BARBOSA DE SOUSA",
-        "serie": "7º Ano A"
-      },
-      {
-        "nome": "KAUANY VITORIA EMIDIO",
+        "nome": "OSVALDO PEDRO DA CRUZ NETO",
         "serie": "7º Ano C"
       },
       {
-        "nome": "KAUÃ SOUZA DOS SANTOS",
-        "serie": "7º Ano C"
-      },
-      {
-        "nome": "KAUAN FIDELES DA SILVA",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "RAFAEL MOREIRA DOS SANTOS",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "GUILHERME CARVALHO DE SOUSA",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "PAULO HENRIQUE GUIMARAES DOS SANTOS",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "DOUGLAS GABRIEL SOUZA FREIRE SILVA",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "MANOELA DE OLIVEIRA",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "MATHEUS LOURENCO VIEIRA DA SILVA",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "YASMIM FERREIRA DE ALMEIDA",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "DAVI DOS SANTOS CORREIA",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "DANILO HENRIQUE PADAVINI",
-        "serie": "9º Ano B"
-      },
-      {
-        "nome": "IGOR PABLO GRUER",
-        "serie": "8º ano C"
-      },
-      {
-        "nome": "ADRINY MOREIRA DE MELO",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "JAMILY NICOLY CARDOSO DE AGUIAR",
-        "serie": "9º Ano C"
-      },
-      {
-        "nome": "WANDREL RODRIGO NASCIMENTO DA CRUZ",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "KAUANY VITORIA ROSA SANTOS",
-        "serie": "7º Ano C"
-      },
-      {
-        "nome": "DANIEL MARTINS GOMES",
-        "serie": "8º Ano A"
-      }
-    ]
-  },
-  "Shirley De Araujo Ribas": {
-    "nome": "Shirley De Araujo Ribas",
-    "tipo": "Professor(a)",
-    "espaco": "Sala 7",
-    "horario": "13:10 às 14:00",
-    "dia": "Quartas-feiras",
-    "alunos": [
-      {
-        "nome": "ARIEL MARIANO DE JESUS",
-        "serie": "7º Ano A"
-      },
-      {
-        "nome": "ROBERT SANTOS SANTIAGO",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "RICHARD LUIZ SILVA CARVALHO",
-        "serie": "9º Ano B"
-      },
-      {
-        "nome": "EDUARDO ERICK HENRIQUE AFONSO DA SILVA",
-        "serie": "9º Ano C"
-      },
-      {
-        "nome": "JOAO VITOR FERREIRA SANTOS",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "KETLYN EMILIA BRAGA DE LIMA",
-        "serie": "9º Ano C"
-      },
-      {
-        "nome": "CARLOS EDUARDO DOS SANTOS LORENZI",
-        "serie": "9º Ano C"
-      },
-      {
-        "nome": "BEATRIZ VIEIRA DE OLIVEIRA",
-        "serie": "8º ano C"
-      },
-      {
-        "nome": "DANIEL GONCALVES DE SOUZA",
-        "serie": "8º ano C"
-      },
-      {
-        "nome": "SAMUEL DE ALMEIDA SOUZA",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "PIETRO SANTOS MARQUES",
-        "serie": "8º ano C"
-      },
-      {
-        "nome": "GUILHERME GODOY PEREIRA VITOR",
-        "serie": "9º Ano B"
-      },
-      {
-        "nome": "GUILHERME LEITE SOUZA CRUZ",
-        "serie": "9º Ano C"
-      },
-      {
-        "nome": "JUAN VITOR MELO FERREIRA",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "PIETRO LOPES DA SILVA",
-        "serie": "9º Ano C"
-      },
-      {
-        "nome": "CAIQUE WILSON DE AZEVEDO SIQUEIRA",
-        "serie": "9º Ano B"
-      },
-      {
-        "nome": "YURHI RIAN MIRANDA NASCIMENTO",
-        "serie": "8º ano C"
-      }
-    ]
-  },
-  "Anderson Do Nascimento Belisiario": {
-    "nome": "Anderson Do Nascimento Belisiario",
-    "tipo": "Professor(a)",
-    "espaco": "Sala de vídeo",
-    "horario": "13:10 às 14:00",
-    "dia": "Quartas-feiras",
-    "alunos": [
-      {
-        "nome": "GEOVANA CERQUEIRA FAGUNDES",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "NATHALIA SOARES ALMEIDA",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "ISABELLY ALVES BRUNES",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "BRIGIDA LARISSA VALDIVINO DA SILVA",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "VITORIA FERREIRA DE ANDRADE",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "MILENA DE JESUS ALMEIDA",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "JOÃO GABRIEL ARAUJO SIMÃO",
-        "serie": "3º Ano B - TEC"
-      },
-      {
-        "nome": "KAUAN WILLIAN DE MOURA SILVA",
+        "nome": "RIQUELME SANCHES PAULO",
         "serie": "7º Ano B"
       },
       {
-        "nome": "NICOLY DA CRUZ SILVA",
-        "serie": "3º Ano A - TEC"
+        "nome": "ALICE ANDRADE OLIVEIRA",
+        "serie": "9º Ano A"
       },
       {
-        "nome": "VITORIA CRISTINA MARTINS DA SILVA",
-        "serie": "3º Ano B - TEC"
+        "nome": "LUCAS RAIMUNDO BORGES DE MELO (ANA PAULA RAIMUNDO BORGES DE MELO)",
+        "serie": "9º Ano A"
       },
       {
-        "nome": "CAUE BELAU DOS SANTOS",
-        "serie": "3º Ano B - TEC"
-      },
-      {
-        "nome": "CAUA APARECIDO SILVA VIANA",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "GABRIEL SOARES DOS SANTOS",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "FATIMA LOURENCO DE LIMA",
-        "serie": "3º Ano A - TEC"
-      },
-      {
-        "nome": "ISAQUE YURI ROCHA DA SILVA",
-        "serie": "3º Ano B - TEC"
+        "nome": "LUCAS PEREIRA DE ASSUNÇÃO",
+        "serie": "8º ano B"
       }
     ]
   },
@@ -578,10 +372,6 @@
         "serie": "6º Ano A"
       },
       {
-        "nome": "JAMILLE DO CARMO DE JESUS SILVA",
-        "serie": "3º Ano A - TEC"
-      },
-      {
         "nome": "CAROLINE VITORIA DE SOUZA SANTOS",
         "serie": "3º Ano A - TEC"
       },
@@ -652,6 +442,87 @@
       {
         "nome": "VALQUIRIA DE SOUZA CERQUEIRA",
         "serie": "3º Ano A - TEC"
+      }
+    ]
+  },
+  "Elaine Lemos Da Silva": {
+    "nome": "Elaine Lemos Da Silva",
+    "tipo": "Professor(a)",
+    "espaco": "",
+    "horario": "13:10 às 14:00",
+    "dia": "Quartas-feiras",
+    "alunos": [
+      {
+        "nome": "IONARA SILVA IBANEZ",
+        "serie": "3º Ano B - TEC"
+      },
+      {
+        "nome": "AGNER DE JESUS VALENCA",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "GUSTAVO DE OLIVEIRA",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "ANA BEATRIZ VAZ DE SOUZA NEVES",
+        "serie": "6º Ano A"
+      },
+      {
+        "nome": "BEATRIZ PEREIRA MAIA",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "PEDRO HENRIQUE DA SILVA SANTOS",
+        "serie": "6º Ano B"
+      },
+      {
+        "nome": "HENRIQUE ALVES FELIX",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "MARIA HELOISA SOUSA DOS SANTOS",
+        "serie": "9º Ano C"
+      },
+      {
+        "nome": "KAUAN RIQUELME LEAL ZANOVELLI RODRIGUES",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "VICTOR HUGO MATOS GUIMARAES",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "MARIANA HERRERA DE JESUS",
+        "serie": "3º Ano B - TEC"
+      },
+      {
+        "nome": "PEDRO HENRIQUE RAMOS COSTA BRASIL",
+        "serie": "7º Ano B"
+      },
+      {
+        "nome": "ICARO LEMOS SILVA",
+        "serie": "8º ano C"
+      },
+      {
+        "nome": "BRAYAN MEDEIROS DOS SANTOS",
+        "serie": "6º Ano B"
+      },
+      {
+        "nome": "GUILHERME GABINO FERRO CAFFE",
+        "serie": "6º Ano A"
+      },
+      {
+        "nome": "JULIO CESAR MOIZES DA COSTA",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "GRAZIELE SANTANA FONCECA",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "KETHELLYN VITORIA DO NASCIMENTO LOURENÇONI",
+        "serie": "9º Ano A"
       }
     ]
   },
@@ -737,10 +608,6 @@
       {
         "nome": "SARA LOURENCO DE LIMA",
         "serie": "9º Ano C"
-      },
-      {
-        "nome": "NAYARA DA CRUZ ALENCAR",
-        "serie": "8º Ano A"
       }
     ]
   },
@@ -826,10 +693,6 @@
       {
         "nome": "RICHARD HENRIQUE OLIVEIRA DA SILVA",
         "serie": "7º Ano A"
-      },
-      {
-        "nome": "KIMBERLLY VICTORIA DA CRUZ BHERING",
-        "serie": "7º Ano B"
       }
     ]
   },
@@ -934,12 +797,97 @@
         "serie": "7º Ano B"
       },
       {
+        "nome": "ISABELLY DANTAS DA SILVA",
+        "serie": "1º Ano D"
+      },
+      {
         "nome": "ISABELE CRISTINA LEITE HONORIO DA SILVA",
+        "serie": "9º Ano C"
+      }
+    ]
+  },
+  "Igor Ferreira": {
+    "nome": "Igor Ferreira",
+    "tipo": "Professor(a)",
+    "espaco": "",
+    "horario": "13:10 às 14:00",
+    "dia": "Quartas-feiras",
+    "alunos": [
+      {
+        "nome": "BRIAN SANTOS FERREIRA",
+        "serie": "6º Ano B"
+      },
+      {
+        "nome": "CLARA KEVELLYN BARBOSA DE SOUSA",
+        "serie": "7º Ano A"
+      },
+      {
+        "nome": "KAUANY VITORIA EMIDIO",
+        "serie": "7º Ano C"
+      },
+      {
+        "nome": "KAUÃ SOUZA DOS SANTOS",
+        "serie": "7º Ano C"
+      },
+      {
+        "nome": "KAUAN FIDELES DA SILVA",
+        "serie": "8º Ano A"
+      },
+      {
+        "nome": "RAFAEL MOREIRA DOS SANTOS",
+        "serie": "8º Ano A"
+      },
+      {
+        "nome": "GUILHERME CARVALHO DE SOUSA",
+        "serie": "8º Ano A"
+      },
+      {
+        "nome": "PAULO HENRIQUE GUIMARAES DOS SANTOS",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "DOUGLAS GABRIEL SOUZA FREIRE SILVA",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "MANOELA DE OLIVEIRA",
+        "serie": "8º Ano A"
+      },
+      {
+        "nome": "MATHEUS LOURENCO VIEIRA DA SILVA",
+        "serie": "8º Ano A"
+      },
+      {
+        "nome": "YASMIM FERREIRA DE ALMEIDA",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "DAVI DOS SANTOS CORREIA",
+        "serie": "8º Ano A"
+      },
+      {
+        "nome": "DANILO HENRIQUE PADAVINI",
+        "serie": "9º Ano B"
+      },
+      {
+        "nome": "IGOR PABLO GRUER",
+        "serie": "8º ano C"
+      },
+      {
+        "nome": "ADRINY MOREIRA DE MELO",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "JAMILY NICOLY CARDOSO DE AGUIAR",
         "serie": "9º Ano C"
       },
       {
-        "nome": "ISABELLY DANTAS DA SILVA",
-        "serie": "1º Ano D"
+        "nome": "WANDREL RODRIGO NASCIMENTO DA CRUZ",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "KAUANY VITORIA ROSA SANTOS",
+        "serie": "7º Ano C"
       }
     ]
   },
@@ -1013,10 +961,140 @@
       {
         "nome": "ELOAH DE FRANÇA DOS SANTOS",
         "serie": "7º Ano B"
+      }
+    ]
+  },
+  "Anderson Do Nascimento Belisiario": {
+    "nome": "Anderson Do Nascimento Belisiario",
+    "tipo": "Professor(a)",
+    "espaco": "Sala de vídeo",
+    "horario": "13:10 às 14:00",
+    "dia": "Quartas-feiras",
+    "alunos": [
+      {
+        "nome": "NATHALIA SOARES ALMEIDA",
+        "serie": "3º Ano A - TEC"
       },
       {
-        "nome": "ANA JULLIA DE ALENCAR BALISTA",
-        "serie": "6º Ano B"
+        "nome": "ISABELLY ALVES BRUNES",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "BRIGIDA LARISSA VALDIVINO DA SILVA",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "VITORIA FERREIRA DE ANDRADE",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "MILENA DE JESUS ALMEIDA",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "JOÃO GABRIEL ARAUJO SIMÃO",
+        "serie": "3º Ano B - TEC"
+      },
+      {
+        "nome": "KAUAN WILLIAN DE MOURA SILVA",
+        "serie": "7º Ano B"
+      },
+      {
+        "nome": "NICOLY DA CRUZ SILVA",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "VITORIA CRISTINA MARTINS DA SILVA",
+        "serie": "3º Ano B - TEC"
+      },
+      {
+        "nome": "CAUE BELAU DOS SANTOS",
+        "serie": "3º Ano B - TEC"
+      },
+      {
+        "nome": "CAUA APARECIDO SILVA VIANA",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "GABRIEL SOARES DOS SANTOS",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "FATIMA LOURENCO DE LIMA",
+        "serie": "3º Ano A - TEC"
+      },
+      {
+        "nome": "ISAQUE YURI ROCHA DA SILVA",
+        "serie": "3º Ano B - TEC"
+      }
+    ]
+  },
+  "Shirley De Araujo Ribas": {
+    "nome": "Shirley De Araujo Ribas",
+    "tipo": "Professor(a)",
+    "espaco": "Sala 7",
+    "horario": "13:10 às 14:00",
+    "dia": "Quartas-feiras",
+    "alunos": [
+      {
+        "nome": "ROBERT SANTOS SANTIAGO",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "RICHARD LUIZ SILVA CARVALHO",
+        "serie": "9º Ano B"
+      },
+      {
+        "nome": "EDUARDO ERICK HENRIQUE AFONSO DA SILVA",
+        "serie": "9º Ano C"
+      },
+      {
+        "nome": "JOAO VITOR FERREIRA SANTOS",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "KETLYN EMILIA BRAGA DE LIMA",
+        "serie": "9º Ano C"
+      },
+      {
+        "nome": "CARLOS EDUARDO DOS SANTOS LORENZI",
+        "serie": "9º Ano C"
+      },
+      {
+        "nome": "BEATRIZ VIEIRA DE OLIVEIRA",
+        "serie": "8º ano C"
+      },
+      {
+        "nome": "DANIEL GONCALVES DE SOUZA",
+        "serie": "8º ano C"
+      },
+      {
+        "nome": "SAMUEL DE ALMEIDA SOUZA",
+        "serie": "8º ano B"
+      },
+      {
+        "nome": "PIETRO SANTOS MARQUES",
+        "serie": "8º ano C"
+      },
+      {
+        "nome": "GUILHERME GODOY PEREIRA VITOR",
+        "serie": "9º Ano B"
+      },
+      {
+        "nome": "GUILHERME LEITE SOUZA CRUZ",
+        "serie": "9º Ano C"
+      },
+      {
+        "nome": "JUAN VITOR MELO FERREIRA",
+        "serie": "9º Ano A"
+      },
+      {
+        "nome": "PIETRO LOPES DA SILVA",
+        "serie": "9º Ano C"
+      },
+      {
+        "nome": "CAIQUE WILSON DE AZEVEDO SIQUEIRA",
+        "serie": "9º Ano B"
       }
     ]
   },
@@ -1110,10 +1188,6 @@
       {
         "nome": "TAILA VITORIA SANTOS LORENZI",
         "serie": "7º Ano C"
-      },
-      {
-        "nome": "DAVI LUIZ ALEXANDRINO ALVES DOS SANTOS",
-        "serie": "7º Ano A"
       }
     ]
   },
@@ -1161,6 +1235,10 @@
         "serie": "6º Ano A"
       },
       {
+        "nome": "DAVI LUIZ ALEXANDRINO ALVES DOS SANTOS",
+        "serie": "7º Ano A"
+      },
+      {
         "nome": "MIGUEL CAMPIONI COSTA",
         "serie": "7º Ano A"
       },
@@ -1195,14 +1273,6 @@
       {
         "nome": "SOPHIA FERREIRA SANTOS",
         "serie": "7º Ano B"
-      },
-      {
-        "nome": "MELISSA YANKA LOURENÇO DOS SANTOS",
-        "serie": "7º Ano B"
-      },
-      {
-        "nome": "DAVI LUIZ ALEXANDRINO ALVES DOS SANTOS",
-        "serie": "7º Ano A"
       }
     ]
   },
@@ -1294,12 +1364,12 @@
         "serie": "3º Ano B - TEC"
       },
       {
-        "nome": "MURILLO DE MORAES SILVA",
-        "serie": "7º Ano A"
-      },
-      {
         "nome": "LUCAS DA CRUZ FERNANDES PIRES",
         "serie": "1º Ano C"
+      },
+      {
+        "nome": "MURILLO DE MORAES SILVA",
+        "serie": "7º Ano A"
       }
     ]
   },
@@ -1349,14 +1419,6 @@
       {
         "nome": "MIGUEL ARONI DE SANTANA",
         "serie": "9º Ano C"
-      },
-      {
-        "nome": "ASHLEY AMANDA BROLLO LODULA",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "LUANNA DO NASCIMENTO LOURENCONI",
-        "serie": "8º Ano A"
       }
     ]
   },
@@ -1441,43 +1503,6 @@
       }
     ]
   },
-  "Aleandro Ferreira dos Santos": {
-    "nome": "Aleandro Ferreira dos Santos",
-    "tipo": "Professor/  CGPC",
-    "espaco": "Coordenação",
-    "horario": "13:10 às 14:00",
-    "dia": "Quartas-feiras",
-    "alunos": [
-      {
-        "nome": "GABRIEL WILLIANS BATISTA DA SILVA",
-        "serie": "1º Ano C"
-      },
-      {
-        "nome": "RAFAELLE HILLARY DE OLIVEIRA SOUZA",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "OSVALDO PEDRO DA CRUZ NETO",
-        "serie": "7º Ano C"
-      },
-      {
-        "nome": "RIQUELME SANCHES PAULO",
-        "serie": "7º Ano B"
-      },
-      {
-        "nome": "ALICE ANDRADE OLIVEIRA",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "LUCAS RAIMUNDO BORGES DE MELO (ANA PAULA RAIMUNDO BORGES DE MELO)",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "LUCAS PEREIRA DE ASSUNÇÃO",
-        "serie": "8º ano B"
-      }
-    ]
-  },
   "Renan Lourenco Da Silva": {
     "nome": "Renan Lourenco Da Silva",
     "tipo": "Diretor",
@@ -1515,91 +1540,6 @@
       },
       {
         "nome": "KAUANY REBECA VITOR DE SOUZA",
-        "serie": "9º Ano A"
-      }
-    ]
-  },
-  "Elaine Lemos Da Silva": {
-    "nome": "Elaine Lemos Da Silva",
-    "tipo": "Professor(a)",
-    "espaco": "",
-    "horario": "13:10 às 14:00",
-    "dia": "Quartas-feiras",
-    "alunos": [
-      {
-        "nome": "EMANUELLY DA SILVA COSTA",
-        "serie": "8º Ano A"
-      },
-      {
-        "nome": "IONARA SILVA IBANEZ",
-        "serie": "3º Ano B - TEC"
-      },
-      {
-        "nome": "AGNER DE JESUS VALENCA",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "GUSTAVO DE OLIVEIRA",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "ANA BEATRIZ VAZ DE SOUZA NEVES",
-        "serie": "6º Ano A"
-      },
-      {
-        "nome": "BEATRIZ PEREIRA MAIA",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "PEDRO HENRIQUE DA SILVA SANTOS",
-        "serie": "6º Ano B"
-      },
-      {
-        "nome": "HENRIQUE ALVES FELIX",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "MARIA HELOISA SOUSA DOS SANTOS",
-        "serie": "9º Ano C"
-      },
-      {
-        "nome": "KAUAN RIQUELME LEAL ZANOVELLI RODRIGUES",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "VICTOR HUGO MATOS GUIMARAES",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "MARIANA HERRERA DE JESUS",
-        "serie": "3º Ano B - TEC"
-      },
-      {
-        "nome": "PEDRO HENRIQUE RAMOS COSTA BRASIL",
-        "serie": "7º Ano B"
-      },
-      {
-        "nome": "ICARO LEMOS SILVA",
-        "serie": "8º ano C"
-      },
-      {
-        "nome": "BRAYAN MEDEIROS DOS SANTOS",
-        "serie": "6º Ano B"
-      },
-      {
-        "nome": "GUILHERME GABINO FERRO CAFFE",
-        "serie": "6º Ano A"
-      },
-      {
-        "nome": "JULIO CESAR MOIZES DA COSTA",
-        "serie": "8º ano B"
-      },
-      {
-        "nome": "GRAZIELE SANTANA FONCECA",
-        "serie": "9º Ano A"
-      },
-      {
-        "nome": "KETHELLYN VITORIA DO NASCIMENTO LOURENÇONI",
         "serie": "9º Ano A"
       }
     ]
@@ -3327,14 +3267,6 @@
   "Viviani De Sousa Gomes": {
     "nome": "Viviani De Sousa Gomes",
     "tipo": "Professor(a)",
-    "espaco": "",
-    "horario": "13:10 às 14:00",
-    "dia": "Quartas-feiras",
-    "alunos": []
-  },
-  "Glauber dos santos Candido": {
-    "nome": "Glauber dos santos Candido",
-    "tipo": "Professor",
     "espaco": "",
     "horario": "13:10 às 14:00",
     "dia": "Quartas-feiras",

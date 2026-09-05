@@ -110,11 +110,10 @@ except ImportError:
 # ======================================================
 # VARIÁVEIS DE AMBIENTE
 # ======================================================
-# PostgreSQL local — não depende mais de credenciais Supabase
-SUPABASE_URL = None
-SUPABASE_KEY = None
-DATABASE_VALID = True
-SUPABASE_VALID = DATABASE_VALID
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SENHA_EXCLUSAO = os.getenv("SENHA_EXCLUSAO", "040600")
+SUPABASE_VALID = bool(SUPABASE_URL and SUPABASE_KEY)
 
 
 HEADERS = {}
@@ -4772,157 +4771,60 @@ SUPABASE_VALID = True
 
 
 def _parse_supabase_path(path: str):
-    """Converte caminhos no formato Supabase/PostgREST em parâmetros SQL PostgreSQL."""
-    from urllib.parse import unquote_plus
-
+    """Converte paths estilo Supabase em parâmetros SQL."""
     if "?" in path:
         tabela, qs = path.split("?", 1)
     else:
         tabela, qs = path, ""
 
-    tabela = unquote_plus(tabela).strip().strip("/")
-
     params = {
         "select": "*",
         "where": [],
         "where_values": [],
-        "order": [],
+        "order": None,
         "limit": None,
         "on_conflict": None,
     }
-
-    if not tabela:
-        raise ValueError("Tabela não informada.")
-
-    # Protege o nome da tabela contra caracteres inesperados.
-    if not all(
-        parte.replace("_", "").isalnum()
-        for parte in tabela.split(".")
-    ):
-        raise ValueError(f"Nome de tabela inválido: {tabela}")
 
     if qs:
         for part in qs.split("&"):
             if "=" not in part:
                 continue
-
             k, v = part.split("=", 1)
-            k = unquote_plus(k.strip())
-            v = unquote_plus(v.strip())
+            k, v = k.strip(), v.strip()
 
             if k == "select":
-                params["select"] = v or "*"
-
+                params["select"] = v
             elif k == "order":
-                for item in v.split(","):
-                    item = item.strip()
-                    if not item:
-                        continue
-
-                    partes = item.split(".")
-                    coluna = partes[0].strip()
-
-                    if not coluna.replace("_", "").isalnum():
-                        raise ValueError(f"Coluna de ordenação inválida: {coluna}")
-
-                    direcao = "ASC"
-
-                    if len(partes) > 1:
-                        if partes[1].lower() == "desc":
-                            direcao = "DESC"
-                        elif partes[1].lower() == "asc":
-                            direcao = "ASC"
-
-                    params["order"].append(f"{coluna} {direcao}")
-
+                params["order"] = v
             elif k == "limit":
                 try:
                     params["limit"] = int(v)
                 except ValueError:
                     pass
-
             elif k == "on_conflict":
-                params["on_conflict"] = [
-                    c.strip()
-                    for c in v.split(",")
-                    if c.strip()
-                ]
-
+                params["on_conflict"] = [c.strip() for c in v.split(",")]
             else:
-                # eq.valor
+                # Filtros: eq., in.(), not.is.null, is.null
                 if v.startswith("eq."):
                     params["where"].append(f"{k} = %s")
                     params["where_values"].append(v[3:])
-
-                # neq.valor
-                elif v.startswith("neq."):
-                    params["where"].append(f"{k} <> %s")
-                    params["where_values"].append(v[4:])
-
-                # gt.valor
-                elif v.startswith("gt."):
-                    params["where"].append(f"{k} > %s")
-                    params["where_values"].append(v[3:])
-
-                # gte.valor
-                elif v.startswith("gte."):
-                    params["where"].append(f"{k} >= %s")
-                    params["where_values"].append(v[4:])
-
-                # lt.valor
-                elif v.startswith("lt."):
-                    params["where"].append(f"{k} < %s")
-                    params["where_values"].append(v[3:])
-
-                # lte.valor
-                elif v.startswith("lte."):
-                    params["where"].append(f"{k} <= %s")
-                    params["where_values"].append(v[4:])
-
-                # in.(A,B,C)
                 elif v.startswith("in."):
-                    vals_str = v[3:].strip()
-
-                    if vals_str.startswith("(") and vals_str.endswith(")"):
-                        vals_str = vals_str[1:-1]
-
-                    vals = [
-                        x.strip()
-                        for x in vals_str.split(",")
-                        if x.strip() != ""
-                    ]
-
-                    if vals:
-                        placeholders = ",".join(["%s"] * len(vals))
-                        params["where"].append(
-                            f"{k} IN ({placeholders})"
-                        )
-                        params["where_values"].extend(vals)
-
-                # not.is.null
+                    vals_str = v[3:].strip("()")
+                    vals = [x.strip() for x in vals_str.split(",")]
+                    placeholders = ",".join(["%s"] * len(vals))
+                    params["where"].append(f"{k} IN ({placeholders})")
+                    params["where_values"].extend(vals)
                 elif v == "not.is.null":
                     params["where"].append(f"{k} IS NOT NULL")
-
-                # is.null
                 elif v == "is.null":
                     params["where"].append(f"{k} IS NULL")
 
-                # ilike.valor
-                elif v.startswith("ilike."):
-                    params["where"].append(f"{k} ILIKE %s")
-                    params["where_values"].append(v[6:])
-
-                # like.valor
-                elif v.startswith("like."):
-                    params["where"].append(f"{k} LIKE %s")
-                    params["where_values"].append(v[5:])
-
-    return tabela, params
+    return tabela.strip(), params
 
 
 class _MockResponse:
-    """Simula requests.Response para manter compatibilidade com o app."""
-
+    """Simula um requests.Response para manter compatibilidade com o resto do app."""
     def __init__(self, status_code=200, payload=None):
         self.status_code = status_code
         self._payload = payload if payload is not None else []
@@ -4932,9 +4834,7 @@ class _MockResponse:
 
     def raise_for_status(self):
         if self.status_code >= 400:
-            raise Exception(
-                f"HTTP {self.status_code}: {self._payload}"
-            )
+            raise Exception(f"HTTP {self.status_code}: {self._payload}")
 
     @property
     def text(self):
@@ -4942,284 +4842,124 @@ class _MockResponse:
 
 
 def _supabase_request(method: str, path: str, **kwargs):
-    """
-    Camada de compatibilidade.
-
-    O app continua utilizando chamadas no padrão Supabase/PostgREST,
-    mas todas as operações são executadas EXCLUSIVAMENTE no PostgreSQL local.
-    """
-
+    """Roteador que traduz chamadas estilo Supabase em SQL PostgreSQL."""
     data = kwargs.get("json") if "json" in kwargs else kwargs.get("data")
-
     tabela, params = _parse_supabase_path(path)
 
     try:
-        # ==================================================
-        # GET
-        # ==================================================
+        # ---------- GET ----------
         if method.upper() == "GET":
-
-            select_clause = params["select"].strip()
-
-            if select_clause == "*":
-                select_clause = "*"
-
+            select_clause = params["select"] if params["select"] != "*" else "*"
             sql = f"SELECT {select_clause} FROM {tabela}"
-
+            
             if params["where"]:
                 sql += " WHERE " + " AND ".join(params["where"])
-
             if params["order"]:
-                sql += " ORDER BY " + ", ".join(params["order"])
+                order = params["order"].replace(".asc", " ASC").replace(".desc", " DESC")
+                sql += f" ORDER BY {order}"
+            if params["limit"]:
+                sql += f" LIMIT {params['limit']}"
 
-            if params["limit"] is not None:
-                sql += f" LIMIT {int(params['limit'])}"
-
-            where_values = params.get("where_values") or []
-            params_sql = tuple(where_values) if where_values else None
-
-            df = pd.read_sql(
-                sql,
-                engine,
-                params=params_sql
-            )
-
-            return _MockResponse(
-                200,
-                df.to_dict(orient="records")
-            )
-
-        # ==================================================
-        # POST / INSERT / UPSERT
-        # ==================================================
+            # Define where_vals de forma segura (tupla ou None)
+            where_vals_raw = params.get("where_values") or []
+            where_vals = tuple(where_vals_raw) if where_vals_raw else None
+            
+            df = pd.read_sql(sql, engine, params=where_vals)
+            return _MockResponse(200, df.to_dict(orient="records"))
+            
+        # ---------- POST (INSERT / UPSERT) ----------
         elif method.upper() == "POST":
-
             if data is None:
-                return _MockResponse(
-                    400,
-                    {"error": "no data"}
-                )
+                return _MockResponse(400, {"error": "no data"})
 
-            registros = (
-                [data]
-                if isinstance(data, dict)
-                else list(data)
-            )
-
+            registros = [data] if isinstance(data, dict) else list(data)
             if not registros:
                 return _MockResponse(201, [])
 
             conn = engine.raw_connection()
-
             try:
                 cur = conn.cursor()
-
-                # União das colunas de todos os registros.
-                cols = []
-                for registro in registros:
-                    for coluna in registro.keys():
-                        if coluna not in cols:
-                            cols.append(coluna)
-
-                if not cols:
-                    return _MockResponse(
-                        400,
-                        {"error": "registro sem colunas"}
-                    )
-
+                cols = list(registros[0].keys())
                 col_list = ",".join(cols)
-
-                values = [
-                    tuple(registro.get(coluna) for coluna in cols)
-                    for registro in registros
-                ]
+                values = [tuple(r.get(c) for c in cols) for r in registros]
 
                 if params.get("on_conflict"):
-
                     conflict_cols = params["on_conflict"]
-
-                    update_cols = [
-                        coluna
-                        for coluna in cols
-                        if coluna not in conflict_cols
-                    ]
-
+                    update_cols = [c for c in cols if c not in conflict_cols]
                     if update_cols:
-
-                        update_set = ",".join(
-                            [
-                                f"{coluna} = EXCLUDED.{coluna}"
-                                for coluna in update_cols
-                            ]
-                        )
-
+                        update_set = ",".join([f"{c} = EXCLUDED.{c}" for c in update_cols])
                         sql = (
-                            f"INSERT INTO {tabela} "
-                            f"({col_list}) VALUES %s "
-                            f"ON CONFLICT "
-                            f"({','.join(conflict_cols)}) "
-                            f"DO UPDATE SET {update_set}"
+                            f"INSERT INTO {tabela} ({col_list}) VALUES %s "
+                            f"ON CONFLICT ({','.join(conflict_cols)}) DO UPDATE SET {update_set}"
                         )
-
                     else:
-
                         sql = (
-                            f"INSERT INTO {tabela} "
-                            f"({col_list}) VALUES %s "
-                            f"ON CONFLICT "
-                            f"({','.join(conflict_cols)}) "
-                            f"DO NOTHING"
+                            f"INSERT INTO {tabela} ({col_list}) VALUES %s "
+                            f"ON CONFLICT ({','.join(conflict_cols)}) DO NOTHING"
                         )
-
                 else:
+                    sql = f"INSERT INTO {tabela} ({col_list}) VALUES %s"
 
-                    sql = (
-                        f"INSERT INTO {tabela} "
-                        f"({col_list}) VALUES %s"
-                    )
-
-                execute_values(
-                    cur,
-                    sql,
-                    values
-                )
-
+                execute_values(cur, sql, values)
                 conn.commit()
-
                 cur.close()
-
             finally:
                 conn.close()
 
             _limpar_cache_supabase_completo()
+            return _MockResponse(201, registros)
 
-            return _MockResponse(
-                201,
-                registros
-            )
-
-        # ==================================================
-        # PATCH / UPDATE
-        # ==================================================
+        # ---------- PATCH (UPDATE) ----------
         elif method.upper() == "PATCH":
-
             if data is None:
-                return _MockResponse(
-                    400,
-                    {"error": "no data"}
-                )
-
-            if not isinstance(data, dict) or not data:
-                return _MockResponse(
-                    400,
-                    {"error": "dados inválidos"}
-                )
+                return _MockResponse(400, {"error": "no data"})
 
             conn = engine.raw_connection()
-
             try:
                 cur = conn.cursor()
-
-                set_clause = ",".join(
-                    [
-                        f"{coluna} = %s"
-                        for coluna in data.keys()
-                    ]
-                )
-
-                sql = (
-                    f"UPDATE {tabela} "
-                    f"SET {set_clause}"
-                )
-
+                set_clause = ",".join([f"{k} = %s" for k in data.keys()])
+                sql = f"UPDATE {tabela} SET {set_clause}"
+                
                 if params["where"]:
-                    sql += (
-                        " WHERE "
-                        + " AND ".join(params["where"])
-                    )
-
-                values = (
-                    list(data.values())
-                    + (params.get("where_values") or [])
-                )
-
+                    sql += " WHERE " + " AND ".join(params["where"])
+                
+                values = list(data.values()) + (params.get("where_values") or [])
                 cur.execute(sql, values)
-
                 conn.commit()
-
                 cur.close()
-
             finally:
                 conn.close()
 
             _limpar_cache_supabase_completo()
+            return _MockResponse(200, [data])
 
-            return _MockResponse(
-                200,
-                [data]
-            )
-
-        # ==================================================
-        # DELETE
-        # ==================================================
+        # ---------- DELETE ----------
         elif method.upper() == "DELETE":
-
             conn = engine.raw_connection()
-
             try:
                 cur = conn.cursor()
-
                 sql = f"DELETE FROM {tabela}"
-
+                
                 if params["where"]:
-                    sql += (
-                        " WHERE "
-                        + " AND ".join(params["where"])
-                    )
-
-                where_values = (
-                    params.get("where_values") or []
-                )
-
-                cur.execute(
-                    sql,
-                    where_values
-                )
-
+                    sql += " WHERE " + " AND ".join(params["where"])
+                
+                where_vals_del = params.get("where_values") or []
+                cur.execute(sql, where_vals_del)
                 conn.commit()
-
                 cur.close()
-
             finally:
                 conn.close()
 
             _limpar_cache_supabase_completo()
-
-            return _MockResponse(
-                204,
-                []
-            )
+            return _MockResponse(204, [])
 
         else:
-
-            return _MockResponse(
-                405,
-                {
-                    "error":
-                    f"Método {method} não suportado"
-                }
-            )
+            return _MockResponse(405, {"error": f"Método {method} não suportado"})
 
     except Exception as e:
+        logger.error(f"Erro PostgreSQL ({method} {path}): {e}")
+        return _MockResponse(500, {"error": str(e)})
 
-        logger.error(
-            f"Erro PostgreSQL ({method} {path}): {e}"
-        )
-
-        return _MockResponse(
-            500,
-            {"error": str(e)}
-        )
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def _supabase_get_dataframe(path: str, acao: str) -> pd.DataFrame:
@@ -16895,7 +16635,7 @@ elif "ALUNOS E TURMAS" in normalizar_texto(menu) or "IMPORTAR ALUNOS" in normali
                                 "nome": novo_nome.strip(),
                                 "turma": nova_turma.strip(),
                                 "situacao": nova_situacao,
-
+                                "responsavel": novo_responsavel.strip() if novo_responsavel else None,
                             }
 
                             if atualizar_aluno(str(aluno_info["ra"]), dados_atualizados):
@@ -22571,12 +22311,6 @@ else:
     if st.button("Voltar para o Dashboard", type="primary", key="voltar_dashboard_fallback"):
         st.session_state.pagina_atual = "🏠 Dashboard"
         st.rerun()
-
-
-
-
-
-
 
 
 
