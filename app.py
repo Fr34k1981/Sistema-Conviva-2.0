@@ -4743,31 +4743,49 @@ def exibir_assistente_sidebar():
         st.markdown("<div style='font-size:0.72rem;color:#475569;line-height:1.8;'>💡 Busca inteligente nas ocorrências<br>📅 Agendamentos fixos na Grade Semanal<br>📥 Exporte relatórios em PDF ou Excel</div>", unsafe_allow_html=True)
 
 # ======================================================
-# POSTGRESQL LOCAL — SUBSTITUI SUPABASE
+# CONEXÃO POSTGRESQL (NEON / AMBIENTE / LOCAL)
 # ======================================================
+import os
 import psycopg2
 from psycopg2.extras import execute_values
 from sqlalchemy import create_engine
 
-DB_HOST = "localhost"
-DB_PORT = 5432
-DB_NAME = "supabase_local"
-DB_USER = "postgres"
-DB_PASSWORD = "D3llc10s@1981!"  # ⚠️ Senha com caracteres especiais
+# Captura URL do Neon vinda dos Secrets do Streamlit ou Variável de Ambiente
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Criação SEGURA do engine, evitando que o '@' da senha quebre a URL
-engine = create_engine(
-    "postgresql+psycopg2://",
-    connect_args={
-        "host": DB_HOST,
-        "port": DB_PORT,
-        "dbname": DB_NAME,
-        "user": DB_USER,
-        "password": DB_PASSWORD
-    }
-)
+if not DATABASE_URL:
+    try:
+        import streamlit as st
+        if "DATABASE_URL" in st.secrets:
+            DATABASE_URL = st.secrets["DATABASE_URL"]
+        elif "postgres" in st.secrets and "url" in st.secrets["postgres"]:
+            DATABASE_URL = st.secrets["postgres"]["url"]
+    except Exception:
+        pass
 
-# Flag de compatibilidade: sempre True agora que temos banco local
+# Se houver URL remota (Neon), cria a engine diretamente por ela
+if DATABASE_URL:
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    engine = create_engine(DATABASE_URL)
+else:
+    # Fallback para ambiente de desenvolvimento local
+    DB_HOST = "localhost"
+    DB_PORT = 5432
+    DB_NAME = "supabase_local"
+    DB_USER = "postgres"
+    DB_PASSWORD = "D3llc10s@1981!"
+    engine = create_engine(
+        "postgresql+psycopg2://",
+        connect_args={
+            "host": DB_HOST,
+            "port": DB_PORT,
+            "dbname": DB_NAME,
+            "user": DB_USER,
+            "password": DB_PASSWORD
+        }
+    )
+
 SUPABASE_VALID = True
 
 
@@ -22571,6 +22589,7 @@ else:
     if st.button("Voltar para o Dashboard", type="primary", key="voltar_dashboard_fallback"):
         st.session_state.pagina_atual = "🏠 Dashboard"
         st.rerun()
+
 
 
 
