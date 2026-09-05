@@ -4750,7 +4750,7 @@ from psycopg2.extras import execute_values
 from sqlalchemy import create_engine
 
 DB_HOST = "localhost"
-DB_PORT = 5436
+DB_PORT = 5432
 DB_NAME = "supabase_local"
 DB_USER = "postgres"
 DB_PASSWORD = "D3llc10s@1981!"  # ⚠️ Senha com caracteres especiais
