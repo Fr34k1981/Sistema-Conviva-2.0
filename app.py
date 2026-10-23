@@ -5288,6 +5288,21 @@ def _supabase_get_dataframe(path: str, acao: str) -> pd.DataFrame:
         raise ErroCarregamentoDados(acao, str(e))
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def _postgres_tabela_existe(nome_tabela: str) -> bool:
+    """Detecta tabelas opcionais sem gerar erro SQL em todo rerun."""
+    try:
+        with engine.connect() as conn:
+            resultado = conn.execute(
+                text("SELECT to_regclass(:nome_tabela)"),
+                {"nome_tabela": f"public.{nome_tabela}"},
+            ).scalar_one_or_none()
+        return resultado is not None
+    except Exception as e:
+        logger.warning("Falha ao verificar tabela opcional %s: %s", nome_tabela, type(e).__name__)
+        return False
+
+
 def _supabase_mutation(method: str, path: str, data, acao: str) -> bool:
     """POST/PATCH/DELETE no PostgreSQL local."""
     try:
@@ -7351,7 +7366,7 @@ def carregar_tutoria_supabase_segura(motivo: str = "carregar tutoria") -> pd.Dat
 @st.cache_data(ttl=900, show_spinner=False)
 def carregar_tutoria_referencias_supabase_segura() -> dict:
     """Carrega metadados de responsáveis se a tabela existir; nunca apaga vínculos."""
-    if not SUPABASE_VALID:
+    if not SUPABASE_VALID or not _postgres_tabela_existe("tutoria_responsaveis"):
         return {}
     consultas = [
         "tutoria_responsaveis?select=responsavel,perfil,espaco,horario,dia,turno&limit=50000",
@@ -7418,7 +7433,7 @@ def carregar_tutoria_backups_json_supabase_segura() -> dict:
     Essa tabela apareceu no seu projeto e serve como rede de segurança. A rotina
     é somente leitura e escolhe o backup com maior quantidade de tutorados.
     """
-    if not SUPABASE_VALID:
+    if not SUPABASE_VALID or not _postgres_tabela_existe("tutoria_backups_json"):
         return {}
     consultas = [
         "tutoria_backups_json?select=*&order=criado_em.desc&limit=30",
