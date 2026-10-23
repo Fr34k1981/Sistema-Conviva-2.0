@@ -61,6 +61,9 @@ class BackupManager:
             ".conviva_cache",
             "cache",
             "backups",
+            "backups_listas_turmas",
+            "backup_extraido",
+            "tutoria_backups",
             ".pytest_cache",
         }
         if partes.intersection(ignorados):

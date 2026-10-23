@@ -159,6 +159,15 @@ st.set_page_config(
     page_icon="🏫",
     initial_sidebar_state="expanded"
 )
+
+from src.access_control import can_delete, require_access
+
+ACCESS_CONTEXT = require_access()
+if ACCESS_CONTEXT.role != "local" and st.user.is_logged_in:
+    if st.sidebar.button("Sair da conta", key="logout_oidc_global"):
+        st.logout()
+        st.stop()
+
 # Keep-alive automático removido para reduzir Egress no Supabase.
 # Antes havia um fetch a cada 4 minutos mantendo o app ativo; isso pode aumentar
 # reruns e leituras indiretas. O Streamlit continuará funcionando normalmente sem ele.
@@ -2454,6 +2463,10 @@ menu_items = [
     {"nome": "Backups", "icone": "💾"},
 ]
 
+if ACCESS_CONTEXT.role == "parent":
+    menu_items = [item for item in menu_items if item["nome"] == "Portal do Responsável"]
+    st.session_state.pagina_atual = "👨‍👩‍👧 Portal do Responsável"
+
 # Criar botões estilizados
 for item in menu_items:
     nome_completo = f"{item['icone']} {item['nome']}"
@@ -2922,7 +2935,6 @@ def nomes_responsaveis_validos_tutoria(tutoria_dict: dict, df_professores_base: 
 # ======================================================
 # AGENDAMENTO DE ESPAÇOS - CONSTANTES
 # ======================================================
-SENHA_GESTAO_AGEND = "040600"
 DIAS_PRIORITARIO = 60
 DIAS_NORMAL = 15
 
@@ -4748,7 +4760,7 @@ def exibir_assistente_sidebar():
 import os
 import psycopg2
 from psycopg2.extras import execute_values
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 # Captura URL do Neon vinda dos Secrets do Streamlit ou Variável de Ambiente
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -4769,22 +4781,32 @@ if DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     engine = create_engine(DATABASE_URL)
 else:
-    # Fallback para ambiente de desenvolvimento local
-    DB_HOST = "localhost"
-    DB_PORT = 5432
-    DB_NAME = "supabase_local"
-    DB_USER = "postgres"
-    DB_PASSWORD = "D3llc10s@1981!"
-    engine = create_engine(
-        "postgresql+psycopg2://",
-        connect_args={
-            "host": DB_HOST,
-            "port": DB_PORT,
-            "dbname": DB_NAME,
-            "user": DB_USER,
-            "password": DB_PASSWORD
-        }
-    )
+    # Fallback para PostgreSQL local configurado no Streamlit Secrets
+    try:
+        db = st.secrets["postgres"]
+
+        DB_HOST = str(db["host"])
+        DB_PORT = int(db["port"])
+        DB_NAME = str(db["database"])
+        DB_USER = str(db["user"])
+        DB_PASSWORD = str(db["password"])
+
+        engine = create_engine(
+            "postgresql+psycopg2://",
+            connect_args={
+                "host": DB_HOST,
+                "port": DB_PORT,
+                "dbname": DB_NAME,
+                "user": DB_USER,
+                "password": DB_PASSWORD
+            },
+            pool_pre_ping=True
+        )
+
+    except Exception as e:
+        st.error("N?o foi poss?vel configurar o PostgreSQL local.")
+        st.error(str(e))
+        st.stop()
 
 SUPABASE_VALID = True
 
@@ -4967,9 +4989,20 @@ def _supabase_request(method: str, path: str, **kwargs):
     mas todas as operações são executadas EXCLUSIVAMENTE no PostgreSQL local.
     """
 
+    allow_sync_delete = bool(kwargs.pop("_allow_sync_delete", False))
     data = kwargs.get("json") if "json" in kwargs else kwargs.get("data")
 
     tabela, params = _parse_supabase_path(path)
+
+    if method.upper() == "DELETE" and not can_delete(
+        ACCESS_CONTEXT.role,
+        tabela,
+        [condition.split(" = ", 1)[0] for condition in params["where"]],
+        params.get("where_values") or [],
+        ACCESS_CONTEXT.teacher_name,
+        allow_sync_delete,
+    ):
+        return _MockResponse(403, {"error": "Exclusao nao autorizada para este perfil."})
 
     try:
         # ==================================================
@@ -5321,7 +5354,14 @@ def salvar_aluno(aluno: dict) -> bool:
         raise ErroValidacao("nome", msg)
     sucesso = _supabase_mutation("POST", "alunos", aluno, "salvar aluno")
     if sucesso:
-        carregar_alunos.clear()
+        try:
+            carregar_alunos.clear()
+        except Exception:
+            pass
+        try:
+            _supabase_get_dataframe.clear()
+        except Exception:
+            pass
     return sucesso
 
 @com_tratamento_erro
@@ -5329,7 +5369,14 @@ def atualizar_aluno(ra: str, dados: dict) -> bool:
     ra_url = requests.utils.quote(str(ra), safe="")
     sucesso = _supabase_mutation("PATCH", f"alunos?ra=eq.{ra_url}", dados, "atualizar aluno")
     if sucesso:
-        carregar_alunos.clear()
+        try:
+            carregar_alunos.clear()
+        except Exception:
+            pass
+        try:
+            _supabase_get_dataframe.clear()
+        except Exception:
+            pass
     return sucesso
 
 @com_tratamento_erro
@@ -5619,6 +5666,10 @@ def _substituir_lista_oficial_turma_com_segurança(turma: str, novos_df: pd.Data
         carregar_alunos.clear()
     except Exception:
         pass
+    try:
+        _supabase_get_dataframe.clear()
+    except Exception:
+        pass
 
     df_atualizado = carregar_alunos()
     sync_stats = sincronizar_turmas_listas_com_base(df_atualizado, origem="substituicao_lista_oficial")
@@ -5673,6 +5724,38 @@ def salvar_professor(professor: dict) -> bool:
     if sucesso:
         carregar_professores.clear()
     return sucesso
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+@com_tratamento_erro
+def carregar_grade_horaria(turno: str = "Turno 1", ano_letivo: int = 2026) -> pd.DataFrame:
+    """Carrega a grade oficial de aulas (disciplina + professor)."""
+    try:
+        turno_q = requests.utils.quote(str(turno), safe="")
+        df = _supabase_get_dataframe(
+            f"grade_horaria?select=id,turno,dia_semana,aula,turma,disciplina,professor,ano_letivo&turno=eq.{turno_q}&ano_letivo=eq.{int(ano_letivo)}&order=dia_semana.asc,aula.asc,turma.asc",
+            "carregar grade horaria"
+        )
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def _filtrar_grade_por_professor(df_grade: pd.DataFrame, nome_prof: str) -> pd.DataFrame:
+    if df_grade is None or df_grade.empty or not nome_prof:
+        return pd.DataFrame()
+    chave = normalizar_texto(nome_prof)
+    # aceita nome curto da grade (ELIANE) dentro do nome completo do cadastro
+    def match(row_prof: str) -> bool:
+        p = normalizar_texto(row_prof)
+        if not p:
+            return False
+        return p in chave or chave in p or p.split()[0] in chave
+    mask = df_grade["professor"].astype(str).apply(match)
+    return df_grade[mask].copy()
+
 
 @com_tratamento_erro
 def atualizar_professor(id_prof: int, dados: dict) -> bool:
@@ -5779,6 +5862,48 @@ def carregar_ocorrencias() -> pd.DataFrame:
     return df
 
 @com_tratamento_erro
+
+@com_tratamento_erro
+def carregar_comunicados() -> pd.DataFrame:
+    """Carrega registros da tabela comunicados."""
+    try:
+        df = _supabase_get_dataframe(
+            "comunicados?select=*&order=data_comunicado.desc,id.desc",
+            "carregar comunicados"
+        )
+        if df is None or df.empty:
+            return pd.DataFrame()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+@com_tratamento_erro
+def salvar_comunicado(dados: dict) -> bool:
+    """Salva um comunicado institucional na tabela comunicados."""
+    valido, msg = Validadores.validar_nao_vazio(dados.get("nome_aluno"), "Nome do aluno")
+    if not valido:
+        raise ErroValidacao("nome_aluno", msg)
+    if not dados.get("data_comunicado"):
+        raise ErroValidacao("data_comunicado", "Data do comunicado e obrigatoria")
+
+    sucesso = _supabase_mutation(
+        "POST",
+        "comunicados",
+        dados,
+        "salvar comunicado"
+    )
+
+    if sucesso:
+        try:
+            # Limpa o cache real usado pelas consultas GET.
+            _supabase_get_dataframe.clear()
+        except Exception:
+            pass
+
+    return sucesso
+
+
 def salvar_ocorrencia(ocorrencia: dict) -> bool:
     valido, msg = Validadores.validar_nao_vazio(ocorrencia.get("aluno"), "Nome do aluno")
     if not valido:
@@ -8199,33 +8324,889 @@ def gerar_pdf_ocorrencia(ocorrencia: dict, df_responsaveis: pd.DataFrame) -> Byt
 # PDF — COMUNICADO AOS PAIS
 # ======================================================
 
-def gerar_pdf_comunicado(aluno_data: dict, ocorrencia_data: dict, medidas_aplicadas: str, observacoes: str, df_responsaveis: pd.DataFrame) -> BytesIO:
-    buffer = BytesIO()
-    doc = _criar_documento_pdf(buffer)
-    estilos = getSampleStyleSheet()
+def gerar_pdf_comunicado(
+    aluno_data: dict,
+    ocorrencia_data: dict,
+    medidas_aplicadas: str = "",
+    observacoes: str = "",
+    df_responsaveis: pd.DataFrame = None,
+    modelo: str = "geral",
+    data_comunicado=None
+) -> BytesIO:
+    """
+    Gera comunicado individual em PDF.
+
+    Modelos:
+        - atraso
+        - saida / fora da sala
+        - demais ocorrencias: modelo institucional geral
+    """
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer
+    )
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib.units import cm
+    from io import BytesIO
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    def limpar(valor):
+        if valor is None:
+            return ""
+
+        try:
+            if pd.isna(valor):
+                return ""
+        except Exception:
+            pass
+
+        texto = str(valor).strip()
+
+        if texto.lower() in ("nan", "none", "nat"):
+            return ""
+
+        return texto
+
+    def escapar(texto):
+        texto = limpar(texto)
+
+        return (
+            texto
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br/>")
+        )
+
     elementos = []
-    _adicionar_logo(elementos)
-    elementos.append(Paragraph("COMUNICADO AOS PAIS / RESPONSÁVEIS", ParagraphStyle("titulo", parent=estilos["Heading1"], alignment=1, fontSize=12, textColor=colors.darkblue)))
-    elementos.append(Spacer(1, 0.4*cm))
-    dados_aluno = [["Aluno", aluno_data.get("nome", "")], ["RA", aluno_data.get("ra", "")], ["Turma", aluno_data.get("turma", "")], ["Total de Ocorrências", aluno_data.get("total_ocorrencias", 0)]]
-    tabela = Table(dados_aluno, colWidths=[5*cm, 10*cm])
-    tabela.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.grey), ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'), ('BACKGROUND', (0, 0), (0, -1), colors.whitesmoke)]))
-    elementos.append(tabela)
-    elementos.append(Spacer(1, 0.3*cm))
-    elementos.append(Paragraph("<b>RELATO DA OCORRÊNCIA</b>", estilos["Normal"]))
-    elementos.append(Paragraph(str(ocorrencia_data.get("relato", "")).replace("\n", "<br/>"), estilos["Normal"]))
-    elementos.append(Spacer(1, 0.3*cm))
-    if medidas_aplicadas:
-        elementos.append(Paragraph("<b>MEDIDAS APLICADAS</b>", estilos["Normal"]))
-        for linha in medidas_aplicadas.split("\n"):
-            elementos.append(Paragraph(f"• {linha}", estilos["Normal"]))
-    if observacoes:
-        elementos.append(Spacer(1, 0.3*cm))
-        elementos.append(Paragraph("<b>OBSERVAÇÕES</b>", estilos["Normal"]))
-        elementos.append(Paragraph(observacoes, estilos["Normal"]))
+
+    # ========================================================
+    # DADOS
+    # ========================================================
+
+    nome = limpar(aluno_data.get("nome"))
+    ra = limpar(aluno_data.get("ra"))
+    turma = limpar(aluno_data.get("turma"))
+    total = aluno_data.get("total_ocorrencias", 0)
+
+    # DATA DO COMUNICADO
+    # A data escolhida no formulário tem prioridade.
+    # A data da ocorrência fica como fallback.
+    if data_comunicado:
+        try:
+            data = data_comunicado.strftime("%d/%m/%Y")
+        except Exception:
+            data = limpar(data_comunicado)
+    else:
+        data = limpar(ocorrencia_data.get("data"))
+    categoria = limpar(ocorrencia_data.get("categoria"))
+    professor = limpar(ocorrencia_data.get("professor"))
+
+    relato = limpar(ocorrencia_data.get("relato"))
+
+    if not relato:
+        relato = limpar(ocorrencia_data.get("descricao"))
+
+    encaminhamento = limpar(
+        ocorrencia_data.get("encaminhamento")
+    )
+
+    # ========================================================
+    # DADOS ESPECÍFICOS DE ATRASO
+    # ========================================================
+
+    horario_chegada = limpar(
+        ocorrencia_data.get("horario_chegada")
+        or ocorrencia_data.get("hora_chegada")
+        or ocorrencia_data.get("horario")
+    )
+
+    formulario_branco = bool(
+        ocorrencia_data.get("formulario_branco")
+        or aluno_data.get("formulario_branco")
+    )
+
+    horario_permitido = limpar(
+        ocorrencia_data.get("horario_permitido")
+        or ocorrencia_data.get("hora_permitida")
+        or ocorrencia_data.get("horario_inicio")
+        or ("" if formulario_branco else "07:00")
+    )
+
+    justificativa_atraso = limpar(
+        ocorrencia_data.get("justificativa")
+        or ocorrencia_data.get("justificativa_atraso")
+    )
+
+    atrasos_semana = limpar(
+        ocorrencia_data.get("atrasos_semana")
+        or ocorrencia_data.get("total_atrasos_semana")
+    )
+
+    atrasos_mes = limpar(
+        ocorrencia_data.get("atrasos_mes")
+        or ocorrencia_data.get("total_atrasos_mes")
+    )
+
+    if formulario_branco:
+        atrasos_semana = ""
+        atrasos_mes = ""
+    else:
+        # Mantem o numero real (incluindo 0). Traco so se veio vazio.
+        if atrasos_semana is None or str(atrasos_semana).strip() == "":
+            atrasos_semana = "—"
+        else:
+            atrasos_semana = str(atrasos_semana)
+        if atrasos_mes is None or str(atrasos_mes).strip() == "":
+            atrasos_mes = "—"
+        else:
+            atrasos_mes = str(atrasos_mes)
+
+    # ========================================================
+    # IDENTIFICAÇÃO DO TIPO DE COMUNICADO
+    # ========================================================
+
+    categoria_normalizada = categoria.upper()
+
+    termos_atraso = [
+        "ATRASO",
+        "ATRASADO",
+        "PONTUALIDADE",
+        "CHEGADA ATRASADA",
+        "ENTRADA ATRASADA"
+    ]
+
+    termos_saida = [
+        "FORA DA SALA",
+        "FORA DE SALA",
+        "SAIDA DA SALA",
+        "SAÍDA DA SALA",
+        "SAIR DA SALA",
+        "AUSENTE DA SALA",
+        "PERMANENCIA FORA",
+        "PERMANÊNCIA FORA",
+        "EVASAO DA SALA",
+        "EVASÃO DA SALA",
+        "CABULAR AULA"
+    ]
+
+    tipo_comunicado = limpar(modelo).lower()
+
+    # Se o usuário escolheu um modelo explícito, respeita a escolha.
+    # Só usa a categoria da ocorrência quando o modelo for geral/vazio.
+    if tipo_comunicado in ("", "geral", "none", "nan"):
+        if any(termo in categoria_normalizada for termo in termos_atraso):
+            tipo_comunicado = "atraso"
+        elif any(termo in categoria_normalizada for termo in termos_saida):
+            tipo_comunicado = "saida"
+
+    # ========================================================
+    # FONTES
+    # ========================================================
+
+    try:
+        pdfmetrics.registerFont(
+            TTFont(
+                "ArialConviva",
+                r"C:\Windows\Fonts\arial.ttf"
+            )
+        )
+
+        pdfmetrics.registerFont(
+            TTFont(
+                "ArialConviva-Bold",
+                r"C:\Windows\Fonts\arialbd.ttf"
+            )
+        )
+
+        fonte_normal = "ArialConviva"
+        fonte_negrito = "ArialConviva-Bold"
+
+    except Exception:
+        fonte_normal = "Helvetica"
+        fonte_negrito = "Helvetica-Bold"
+
+    # ========================================================
+    # DOCUMENTO
+    # ========================================================
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=36,
+        leftMargin=36,
+        topMargin=28,
+        bottomMargin=28)
+
+    estilos = getSampleStyleSheet()
+
+    estilo_titulo = ParagraphStyle(
+        "TituloComunicado",
+        parent=estilos["Title"],
+        fontName=fonte_negrito,
+        fontSize=14,
+        leading=12,
+        alignment=TA_CENTER,
+        spaceAfter=4
+    )
+
+    estilo_subtitulo = ParagraphStyle(
+        "SubtituloComunicado",
+        parent=estilos["Normal"],
+        fontName=fonte_normal,
+        fontSize=9,
+        leading=12,
+        alignment=TA_CENTER,
+        textColor=colors.grey
+    )
+
+    estilo_texto = ParagraphStyle(
+        "TextoComunicado",
+        parent=estilos["Normal"],
+        fontName=fonte_normal,
+        fontSize=10,
+        leading=14,
+        alignment=TA_JUSTIFY,
+        spaceAfter=8
+    )
+
+    estilo_secao = ParagraphStyle(
+        "SecaoComunicado",
+        parent=estilos["Heading2"],
+        fontName=fonte_negrito,
+        fontSize=10,
+        leading=13,
+        alignment=TA_LEFT,
+        spaceBefore=10,
+        spaceAfter=8
+    )
+
+    estilo_centralizado = ParagraphStyle(
+        "CentralizadoComunicado",
+        parent=estilos["Normal"],
+        fontName=fonte_normal,
+        fontSize=8.5,
+        leading=12,
+        alignment=TA_CENTER
+    )
+
+    def adicionar_paragrafo(texto, estilo=estilo_texto):
+        elementos.append(
+            Paragraph(
+                escapar(texto),
+                estilo
+            )
+        )
+
+    def adicionar_secao(titulo):
+        elementos.append(
+            Paragraph(
+                escapar(titulo),
+                estilo_secao
+            )
+        )
+
+    # ========================================================
+    # LOGO
+    # ========================================================
+
+    try:
+        _adicionar_logo(elementos)
+    except Exception:
+        pass
+
+    # ========================================================
+    # CABEÇALHO
+    # ========================================================
+
+    if tipo_comunicado == "atraso":
+
+        titulo = (
+            "COMUNICADO À FAMÍLIA: "
+            "PONTUALIDADE E ROTINA ESCOLAR"
+        )
+
+        subtitulo = ""
+
+    elif tipo_comunicado == "saida":
+
+        titulo = (
+            "COMUNICADO À FAMÍLIA: "
+            "PERMANÊNCIA EM SALA DE AULA "
+            "E CUMPRIMENTO DO DIREITO À EDUCAÇÃO"
+        )
+
+        subtitulo = (
+            "Orientação sobre permanência em sala durante "
+            "o horário letivo"
+        )
+
+    else:
+
+        titulos = {
+            "faltas": (
+                "COMUNICADO À FAMÍLIA: "
+                "FREQUÊNCIA E ACOMPANHAMENTO ESCOLAR"
+            ),
+            "celular": (
+                "COMUNICADO À FAMÍLIA: "
+                "USO DE DISPOSITIVOS E ROTINA PEDAGÓGICA"
+            ),
+            "convivencia": (
+                "COMUNICADO À FAMÍLIA: "
+                "CONVIVÊNCIA E RESPEITO"
+            ),
+            "bullying": (
+                "COMUNICADO À FAMÍLIA: "
+                "CONVIVÊNCIA, PROTEÇÃO E CULTURA DE PAZ"
+            ),
+            "desempenho": (
+                "COMUNICADO À FAMÍLIA: "
+                "ACOMPANHAMENTO PEDAGÓGICO"
+            ),
+            "geral": "COMUNICADO À FAMÍLIA"
+        }
+
+        titulo = titulos.get(
+            tipo_comunicado,
+            "COMUNICADO À FAMÍLIA"
+        )
+
+        subtitulo = (
+            "Registro institucional para acompanhamento "
+            "da vida escolar do estudante"
+        )
+
+    elementos.append(
+        Paragraph(
+            escapar(titulo),
+            estilo_titulo
+        )
+    )
+
+    if subtitulo:
+        elementos.append(
+            Paragraph(
+                escapar(subtitulo),
+                estilo_subtitulo
+            )
+        )
+
+    elementos.append(
+        Spacer(1, 0.35 * cm)
+    )
+
+    # ========================================================
+    # MODELO: ATRASO NA ENTRADA DA ESCOLA
+    # ========================================================
+
+    if tipo_comunicado == "atraso":
+
+        try:
+            total_atrasos_pdf = ocorrencia_data.get("total_atrasos_aluno")
+            if total_atrasos_pdf is not None and str(total_atrasos_pdf).strip() != "":
+                ocorrencias_anteriores = max(int(total_atrasos_pdf), 0)
+            else:
+                total_ocorrencias_int = int(total or 0)
+                ocorrencias_anteriores = max(total_ocorrencias_int - 1, 0)
+        except Exception:
+            ocorrencias_anteriores = 0
+
+        # ----------------------------------------------------
+        # DADOS DO ESTUDANTE
+        # ----------------------------------------------------
+
+        adicionar_secao("DADOS DO ESTUDANTE")
+
+        if formulario_branco:
+            dados_bilhete = [
+                ["Nome:", ""],
+                ["RA:", "                         |    Turma: "],
+                ["Ocorrências anteriores:", ""],
+            ]
+        else:
+            dados_bilhete = [
+                [
+                    "Nome:",
+                    nome
+                ],
+                [
+                    "RA:",
+                    ra + "    |    Turma: " + turma
+                ],
+                [
+                    "Ocorrências anteriores:",
+                    str(ocorrencias_anteriores)
+                ]
+            ]
+
+        tabela_bilhete = Table(
+            dados_bilhete,
+            colWidths=[
+                5.0 * cm,
+                10.2 * cm
+            ]
+        )
+
+        tabela_bilhete.setStyle(
+            TableStyle([
+                (
+                    "GRID",
+                    (0, 0),
+                    (-1, -1),
+                    0.5,
+                    colors.grey
+                ),
+                (
+                    "FONTNAME",
+                    (0, 0),
+                    (0, -1),
+                    fonte_negrito
+                ),
+                (
+                    "BACKGROUND",
+                    (0, 0),
+                    (0, -1),
+                    colors.whitesmoke
+                ),
+                (
+                    "VALIGN",
+                    (0, 0),
+                    (-1, -1),
+                    "MIDDLE"
+                ),
+                (
+                    "FONTSIZE",
+                    (0, 0),
+                    (-1, -1),
+                    9
+                ),
+                (
+                    "LEFTPADDING",
+                    (0, 0),
+                    (-1, -1),
+                    6
+                ),
+                (
+                    "RIGHTPADDING",
+                    (0, 0),
+                    (-1, -1),
+                    6
+                ),
+                (
+                    "TOPPADDING",
+                    (0, 0),
+                    (-1, -1),
+                    5
+                ),
+                (
+                    "BOTTOMPADDING",
+                    (0, 0),
+                    (-1, -1),
+                    5
+                )
+            ])
+        )
+
+        elementos.append(tabela_bilhete)
+
+        elementos.append(
+            Spacer(1, 0.25 * cm)
+        )
+
+        # ----------------------------------------------------
+        # REGISTRO DA SITUAÇÃO
+        # ----------------------------------------------------
+
+        adicionar_secao("REGISTRO DA SITUAÇÃO")
+
+        tabela_atraso = Table(
+            [
+                [
+                    "Horário Permitido",
+                    "Horário de Chegada",
+                    "Atrasos/Semana",
+                    "Atrasos/Mês"
+                ],
+                [
+                    "" if formulario_branco else (horario_permitido or "07:00"),
+                    "" if formulario_branco else (horario_chegada or "Não informado"),
+                    atrasos_semana,
+                    atrasos_mes
+                ]
+            ],
+            colWidths=[
+                3.5 * cm,
+                3.5 * cm,
+                3.5 * cm,
+                3.5 * cm
+            ]
+        )
+
+        tabela_atraso.setStyle(
+            TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke),
+                ("FONTNAME", (0, 0), (-1, 0), fonte_negrito),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ])
+        )
+
+        elementos.append(tabela_atraso)
+        elementos.append(Spacer(1, 0.15 * cm))
+
+        if formulario_branco:
+            adicionar_paragrafo("Justificativa apresentada: ")
+        else:
+            adicionar_paragrafo(
+                "Justificativa apresentada: "
+                + (justificativa_atraso if justificativa_atraso else "Não informada.")
+            )
+
+        # ----------------------------------------------------
+        # ORIENTAÇÃO PEDAGÓGICA E IMPACTO
+        # ----------------------------------------------------
+
+        adicionar_secao("ORIENTAÇÃO PEDAGÓGICA E IMPACTO")
+
+        adicionar_paragrafo(
+            "A pontualidade é essencial para o desenvolvimento "
+            "pedagógico e social do aluno. Atrasos recorrentes "
+            "provocam a perda de conteúdos iniciais, interrompem "
+            "a sequência didática e prejudicam o engajamento "
+            "do estudante."
+        )
+
+        adicionar_paragrafo(
+            "Solicitamos o apoio da família na organização dos "
+            "horários para garantir o direito pleno à aprendizagem."
+        )
+
+        # ----------------------------------------------------
+        # FUNDAMENTAÇÃO LEGAL E PROCEDIMENTOS
+        # ----------------------------------------------------
+
+        adicionar_secao("FUNDAMENTAÇÃO LEGAL E PROCEDIMENTOS")
+
+        adicionar_paragrafo(
+            "Conforme o ECA (Lei nº 8.069/1990) e a LDB "
+            "(Lei nº 9.394/1996), é dever da família e da escola "
+            "acompanhar a frequência, a pontualidade e o "
+            "aproveitamento escolar do estudante."
+        )
+
+        adicionar_paragrafo(
+            "• Registros internos: Todos os atrasos são arquivados "
+            "no prontuário do aluno."
+        )
+
+        adicionar_paragrafo(
+            "• Reincidência: Persistindo os atrasos, a família "
+            "será convocada pela direção para definir um plano "
+            "de acompanhamento."
+        )
+
+        adicionar_paragrafo(
+            "• Medidas cabíveis: Caso o descumprimento permaneça "
+            "e comprometa a rotina escolar, a escola adotará "
+            "as providências previstas na legislação e nas "
+            "normas da rede de ensino."
+        )
+
+        # ----------------------------------------------------
+        # TERMO DE CIÊNCIA
+        # ----------------------------------------------------
+
+        adicionar_secao("TERMO DE CIÊNCIA")
+
+        adicionar_paragrafo(
+            "Este documento integra o acompanhamento escolar "
+            "do estudante e busca fortalecer a parceria entre "
+            "família e escola."
+        )
+
+        adicionar_paragrafo(
+            f"Data: {data}"
+        )
+
+        elementos.append(Spacer(1, 0.35 * cm))
+
+        assinaturas_atraso = Table(
+            [
+                [
+                    "__________________________________",
+                    "__________________________________"
+                ],
+                [
+                    "Assinatura do Responsável",
+                    "Assinatura do Representante da Escola"
+                ]
+            ],
+            colWidths=[
+                7.0 * cm,
+                7.0 * cm
+            ]
+        )
+
+        assinaturas_atraso.setStyle(
+            TableStyle([
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("FONTNAME", (0, 1), (-1, 1), fonte_normal),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ])
+        )
+
+        elementos.append(assinaturas_atraso)
+
+    # ========================================================
+    # MODELO: FORA DA SALA
+    # ========================================================
+
+    elif tipo_comunicado == "saida":
+
+        adicionar_paragrafo(
+            "Prezados pais e/ou responsáveis,"
+        )
+
+        adicionar_paragrafo(
+            f"Informamos que o(a) estudante {nome}, "
+            f"matriculado(a) no {turma}, foi registrado(a) "
+            "pela escola por estar fora da sala de aula durante "
+            "o horário letivo, sem autorização ou justificativa "
+            "registrada."
+        )
+
+        adicionar_secao(
+            "FUNDAMENTAÇÃO LEGAL E REGIMENTAL"
+        )
+
+        adicionar_paragrafo(
+            "A Lei de Diretrizes e Bases da Educação Nacional — "
+            "LDB (Lei nº 9.394/1996) estabelece a importância do "
+            "cumprimento da carga horária escolar e da participação "
+            "do estudante nas atividades pedagógicas."
+        )
+
+        adicionar_paragrafo(
+            "O Estatuto da Criança e do Adolescente — ECA "
+            "(Lei nº 8.069/1990) assegura o direito à educação "
+            "e à permanência na escola, devendo a instituição "
+            "promover condições de proteção e acompanhamento "
+            "durante o período escolar."
+        )
+
+        adicionar_paragrafo(
+            "As normas de convivência e o Regimento Escolar "
+            "orientam a permanência do estudante nos espaços "
+            "autorizados durante o horário letivo, respeitando "
+            "a organização pedagógica e os procedimentos de "
+            "segurança da unidade escolar."
+        )
+
+        adicionar_secao(
+            "ORIENTAÇÃO À FAMÍLIA"
+        )
+
+        adicionar_paragrafo(
+            "Solicitamos o apoio e a orientação da família para "
+            "que o(a) estudante compreenda a importância de "
+            "permanecer em sala durante o horário de aula, "
+            "salvo quando houver autorização do professor ou "
+            "da equipe responsável."
+        )
+
+        adicionar_paragrafo(
+            "A permanência em sala contribui para o cumprimento "
+            "da carga horária, para a continuidade das aprendizagens "
+            "e para a segurança do próprio estudante e dos demais."
+        )
+
+        adicionar_secao(
+            "TERMO DE CIÊNCIA — PERMANÊNCIA EM SALA DE AULA"
+        )
+
+        adicionar_paragrafo(
+            f"Declaro que tomei ciência do comunicado referente "
+            f"ao(à) estudante {nome}, da turma {turma}, sobre "
+            "o registro de ausência da sala de aula durante "
+            "o horário letivo, estando ciente das orientações "
+            "apresentadas e comprometendo-me a orientar o(a) "
+            "estudante quanto ao cumprimento das normas escolares."
+        )
+
+        elementos.append(Spacer(1, 0.25 * cm))
+
+        termo = Table(
+            [
+                [
+                    "Nome do Responsável:",
+                    "____________________________________________"
+                ],
+                [
+                    "Assinatura:",
+                    "____________________________________________"
+                ],
+                [
+                    "Data:",
+                    data
+                ]
+            ],
+            colWidths=[
+                4.0 * cm,
+                11.2 * cm
+            ]
+        )
+
+        termo.setStyle(
+            TableStyle([
+                ("FONTNAME", (0, 0), (0, -1), fonte_negrito),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 8),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+            ])
+        )
+
+        elementos.append(termo)
+
+    # ========================================================
+    # MODELO GERAL
+    # ========================================================
+
+    else:
+
+        adicionar_paragrafo(
+            "Prezados pais e/ou responsáveis,"
+        )
+
+        adicionar_paragrafo(
+            "A escola encaminha este comunicado com o objetivo "
+            "de manter a família informada sobre uma situação "
+            "registrada na rotina escolar do estudante e fortalecer "
+            "a parceria entre família e escola."
+        )
+
+
+        adicionar_secao(
+            "CONSIDERAÇÕES PEDAGÓGICAS"
+        )
+
+        adicionar_paragrafo(
+            "O acompanhamento da situação tem como finalidade "
+            "contribuir para o desenvolvimento integral do estudante, "
+            "para a aprendizagem e para a construção de uma rotina "
+            "escolar organizada, segura e respeitosa."
+        )
+
+
+        adicionar_secao(
+            "CIÊNCIA E ACOMPANHAMENTO"
+        )
+
+        adicionar_paragrafo(
+            "A ciência deste comunicado tem caráter informativo "
+            "e busca fortalecer o diálogo e a parceria entre "
+            "família e escola."
+        )
+
+        elementos.append(
+            Spacer(1, 0.65 * cm)
+        )
+
+        assinaturas = Table(
+            [
+                [
+                    "__________________________________",
+                    "__________________________________"
+                ],
+                [
+                    "Responsável pelo estudante",
+                    "Representante da escola"
+                ]
+            ],
+            colWidths=[
+                7.5 * cm,
+                7.5 * cm
+            ]
+        )
+
+        assinaturas.setStyle(
+            TableStyle([
+                (
+                    "ALIGN",
+                    (0, 0),
+                    (-1, -1),
+                    "CENTER"
+                ),
+                (
+                    "FONTSIZE",
+                    (0, 0),
+                    (-1, -1),
+                    8.5
+                ),
+                (
+                    "VALIGN",
+                    (0, 0),
+                    (-1, -1),
+                    "TOP"
+                )
+            ])
+        )
+
+        elementos.append(
+            assinaturas
+        )
+
+    # ========================================================
+    # OBSERVAÇÕES
+    # ========================================================
+
+    if observacoes and tipo_comunicado != "atraso":
+
+        adicionar_secao("OBSERVAÇÕES")
+
+        adicionar_paragrafo(
+            observacoes
+        )
+
+    # ========================================================
+    # RODAPÉ
+    # ========================================================
+
+    elementos.append(
+        Spacer(1, 0.4 * cm)
+    )
+
+    elementos.append(
+        Paragraph(
+            "Este documento integra o acompanhamento escolar "
+            "do estudante.",
+            estilo_centralizado
+        )
+    )
+
     doc.build(elementos)
+
     buffer.seek(0)
+
     return buffer
+
 def gerar_pdf_relatorio_estudante(registro: dict, df_ocorrencias_aluno: pd.DataFrame) -> BytesIO:
     """
     Gera PDF completo do relatório do estudante com:
@@ -8648,10 +9629,13 @@ if st.session_state.backup_manager is None:
 
 if not st.session_state.backup_realizado:
     try:
-        st.session_state.backup_manager.criar_backup()
+        resultado_backup = st.session_state.backup_manager.criar_backup_automatico_se_necessario(
+            intervalo_horas=24
+        )
         st.session_state.backup_manager.limpar_backups_antigos(dias_retencao=30)
         st.session_state.backup_realizado = True
-        verificar_conquista("backup_realizado")  # ⭐ Conquista por fazer backup
+        if resultado_backup.get("criado"):
+            verificar_conquista("backup_realizado")  # ⭐ Conquista por fazer backup
     except Exception as e:
         logger.error(f"Erro ao executar backup automático: {e}")
         # ======================================================
@@ -10558,24 +11542,20 @@ def _resposta_pedagogica_local(texto: str, tarefa: str, contexto: str = "") -> s
     )
 
 
-# ---------- Login profissional do caderno ----------
-def carregar_usuarios_tutoria_supabase() -> pd.DataFrame:
-    """Carrega usuários da tabela usuarios, caso exista. Se não existir, retorna DataFrame vazio."""
-    if not SUPABASE_VALID:
-        return pd.DataFrame()
-    try:
-        resp = _supabase_request("GET", "usuarios?select=id,nome,email,senha,tipo&order=nome.asc")
-        dados = resp.json() if resp is not None else []
-        return pd.DataFrame(dados)
-    except Exception:
-        return pd.DataFrame()
-
-
+# ---------- Identidade profissional do caderno ----------
 def render_login_professor_tutoria(nomes_professores: list[str]) -> tuple[bool, str, bool]:
-    """Login por usuário quando houver tabela usuarios; fallback para seleção de professor e senha de gestão."""
+    """Usa a identidade OIDC mapeada; selecao livre fica limitada ao desenvolvimento local."""
     st.markdown("### 🔐 Acesso ao Caderno de Tutoria")
     usuario_logado = str(st.session_state.get("tutoria_usuario_logado", "")).strip()
     perfil_gestao = bool(st.session_state.get("tutoria_usuario_gestao", False))
+    email_sessao = str(st.session_state.get("tutoria_usuario_email", "")).strip().casefold()
+    email_atual = ACCESS_CONTEXT.email.strip().casefold()
+    if ACCESS_CONTEXT.role != "local" and usuario_logado and email_sessao != email_atual:
+        for chave in ["tutoria_usuario_logado", "tutoria_usuario_gestao", "tutoria_usuario_email"]:
+            st.session_state.pop(chave, None)
+        usuario_logado = ""
+        perfil_gestao = False
+
     if usuario_logado:
         col_a, col_b = st.columns([4, 1])
         col_a.success(f"Acesso ativo: {usuario_logado}" + (" — Gestão" if perfil_gestao else " — Professor(a)"))
@@ -10585,48 +11565,34 @@ def render_login_professor_tutoria(nomes_professores: list[str]) -> tuple[bool, 
             st.rerun()
         return True, usuario_logado, perfil_gestao
 
-    usuarios = carregar_usuarios_tutoria_supabase()
-    aba_login, aba_acesso_rapido, aba_gestao = st.tabs(["Login", "Acesso rápido", "Gestão/Coordenação"])
+    aba_professor, aba_gestao = st.tabs(["Acesso do professor", "Gestão/Coordenação"])
 
-    with aba_login:
-        if usuarios.empty:
-            st.info("A tabela usuarios ainda não possui registros. Use o acesso rápido ou a senha da gestão.")
-        email = st.text_input("E-mail", key="login_tutoria_email")
-        senha = st.text_input("Senha", type="password", key="login_tutoria_senha")
-        if st.button("Entrar", type="primary", key="login_tutoria_usuario_btn"):
-            if usuarios.empty:
-                st.error("Nenhum usuário cadastrado na tabela usuarios.")
-            else:
-                base = usuarios.copy()
-                base["email_norm"] = base.get("email", "").astype(str).str.strip().str.lower()
-                encontrado = base[(base["email_norm"] == str(email).strip().lower()) & (base.get("senha", "").astype(str) == str(senha))]
-                if encontrado.empty:
-                    st.error("Login inválido.")
-                else:
-                    user = encontrado.iloc[0].to_dict()
-                    tipo = normalizar_texto(user.get("tipo", "professor"))
-                    st.session_state["tutoria_usuario_logado"] = str(user.get("nome") or user.get("email") or "Usuário")
-                    st.session_state["tutoria_usuario_email"] = str(user.get("email") or "")
-                    st.session_state["tutoria_usuario_gestao"] = any(t in tipo for t in ["GESTAO", "GESTOR", "COORD", "DIRECAO"])
-                    st.rerun()
+    with aba_professor:
+        if ACCESS_CONTEXT.role == "local":
+            st.caption("Seleção de identidade disponível somente no desenvolvimento local.")
+            nome = st.selectbox("Professor(a)", nomes_professores, key="login_professor_tutoria_nome_profissional")
+        elif ACCESS_CONTEXT.role == "staff" and ACCESS_CONTEXT.teacher_name:
+            nome = ACCESS_CONTEXT.teacher_name
+            st.caption(f"Conta autenticada: {ACCESS_CONTEXT.email}")
+        else:
+            nome = ""
+            st.info("Vincule o e-mail institucional ao nome cadastrado em APP_TEACHER_BY_EMAIL.")
 
-    with aba_acesso_rapido:
-        st.caption("Disponível para manter compatibilidade com os cadastros atuais de professores.")
-        nome = st.selectbox("Professor(a)", nomes_professores, key="login_professor_tutoria_nome_profissional")
-        if st.button("Entrar como professor(a)", key="login_professor_tutoria_btn_profissional"):
+        if nome and st.button("Entrar como professor(a)", key="login_professor_tutoria_btn_profissional"):
             st.session_state["tutoria_usuario_logado"] = nome
+            st.session_state["tutoria_usuario_email"] = ACCESS_CONTEXT.email
             st.session_state["tutoria_usuario_gestao"] = False
             st.rerun()
 
     with aba_gestao:
-        senha_gestao = st.text_input("Senha da gestão", type="password", key="login_gestao_tutoria_senha_profissional")
-        if st.button("Entrar como gestão", key="login_gestao_tutoria_btn_profissional"):
-            if str(senha_gestao) == str(SENHA_EXCLUSAO):
+        if ACCESS_CONTEXT.role in {"manager", "local"}:
+            if st.button("Entrar como gestão", key="login_gestao_tutoria_btn_profissional"):
                 st.session_state["tutoria_usuario_logado"] = "Gestão/Coordenação"
+                st.session_state["tutoria_usuario_email"] = ACCESS_CONTEXT.email
                 st.session_state["tutoria_usuario_gestao"] = True
                 st.rerun()
-            else:
-                st.error("Senha incorreta.")
+        else:
+            st.info("Acesso exclusivo para contas de gestão autorizadas.")
     return False, "", False
 
 
@@ -10652,7 +11618,7 @@ def sincronizar_caderno_tabelas_estruturadas(chave: str, caderno: dict) -> None:
 
     try:
         if _supabase_tabela_existe("perfil_tutorado"):
-            _supabase_request("DELETE", f"perfil_tutorado?chave_caderno=eq.{chave_q}")
+            _supabase_request("DELETE", f"perfil_tutorado?chave_caderno=eq.{chave_q}", _allow_sync_delete=True)
             _supabase_request("POST", "perfil_tutorado", json={
                 "chave_caderno": chave, "professor": professor, "estudante": estudante, "turma": turma,
                 "dados": caderno.get("perfil_tutorado", {}),
@@ -10662,7 +11628,7 @@ def sincronizar_caderno_tabelas_estruturadas(chave: str, caderno: dict) -> None:
 
     try:
         if _supabase_tabela_existe("rendimento_bimestral"):
-            _supabase_request("DELETE", f"rendimento_bimestral?chave_caderno=eq.{chave_q}")
+            _supabase_request("DELETE", f"rendimento_bimestral?chave_caderno=eq.{chave_q}", _allow_sync_delete=True)
             payload = []
             for componente, reg in (caderno.get("rendimento_bimestral", {}) or {}).items():
                 payload.append({
@@ -10681,7 +11647,7 @@ def sincronizar_caderno_tabelas_estruturadas(chave: str, caderno: dict) -> None:
 
     try:
         if _supabase_tabela_existe("tutoria_individual"):
-            _supabase_request("DELETE", f"tutoria_individual?chave_caderno=eq.{chave_q}")
+            _supabase_request("DELETE", f"tutoria_individual?chave_caderno=eq.{chave_q}", _allow_sync_delete=True)
             payload = []
             for reg in caderno.get("tutoria_individual", []) or []:
                 payload.append({
@@ -10699,7 +11665,7 @@ def sincronizar_caderno_tabelas_estruturadas(chave: str, caderno: dict) -> None:
 
     try:
         if _supabase_tabela_existe("tutoria_coletiva"):
-            _supabase_request("DELETE", f"tutoria_coletiva?chave_caderno=eq.{chave_q}")
+            _supabase_request("DELETE", f"tutoria_coletiva?chave_caderno=eq.{chave_q}", _allow_sync_delete=True)
             payload = []
             for reg in caderno.get("tutoria_coletiva", []) or []:
                 payload.append({
@@ -15026,6 +15992,7 @@ elif menu == "🏆 Prova Paulista":
     _render_pagina_prova_paulista()
 
 elif menu == "👨‍👩‍👧 Portal do Responsável":
+    require_access("parent")
     page_header("👨‍👩‍👧 Portal do Responsável", "Acesso seguro para pais e responsáveis", "#7c3aed")
     
     st.markdown("""
@@ -15040,48 +16007,31 @@ elif menu == "👨‍👩‍👧 Portal do Responsável":
             <b style="font-family:'Nunito',sans-serif;font-size:1rem;color:#4c1d95;">Acesso Restrito ao Responsável</b>
         </div>
         <p style="margin:0;color:#6d28d9;font-size:0.9rem;">
-            Digite o RA do aluno e a senha para acessar o histórico de ocorrências e informações.
+            A conta autenticada acessa somente as informações do estudante vinculado.
         </p>
     </div>
     """, unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        ra_acesso = st.text_input("RA do Aluno:", placeholder="Digite o RA", key="portal_ra")
-    with col2:
-        senha_acesso = st.text_input("Senha:", type="password", placeholder="Digite a senha", key="portal_senha")
-    
-    if st.button("🔓 Acessar Portal", type="primary", use_container_width=True):
-        if not ra_acesso or not senha_acesso:
-            st.error("❌ Preencha RA e senha!")
-        else:
-            aluno_encontrado = df_alunos[df_alunos['ra'].astype(str) == ra_acesso] if not df_alunos.empty else pd.DataFrame()
-            
-            if aluno_encontrado.empty:
-                st.error("❌ Aluno não encontrado!")
-            else:
-                senha_correta = "123456"
-                
-                if senha_acesso != senha_correta:
-                    st.error("❌ Senha incorreta!")
-                else:
-                    aluno = aluno_encontrado.iloc[0]
-                    st.success(f"✅ Bem-vindo, responsável por **{aluno['nome']}**!")
-                    
-                    st.markdown("---")
-                    
-                    st.subheader("Informacoes do Aluno")
-                    st.write(f"Nome: {aluno['nome']}")
-                    st.write(f"RA: {aluno['ra']}")
-                    st.write(f"Turma: {aluno.get('turma', '')}")
 
-                    ocorr_aluno = df_ocorrencias[df_ocorrencias['ra'].astype(str) == str(aluno['ra'])] if not df_ocorrencias.empty else pd.DataFrame()
-                    if ocorr_aluno.empty:
-                        st.info("Nenhuma ocorrencia registrada para este aluno.")
-                    else:
-                        st.write("Ocorrencias recentes:")
-                        cols_show = [c for c in ["data", "categoria", "gravidade", "professor"] if c in ocorr_aluno.columns]
-                        st.dataframe(ocorr_aluno[cols_show].head(20), use_container_width=True, hide_index=True)
+    ra_autorizado = ACCESS_CONTEXT.student_ra
+    aluno_encontrado = df_alunos[df_alunos["ra"].astype(str) == ra_autorizado] if not df_alunos.empty else pd.DataFrame()
+    if aluno_encontrado.empty:
+        st.error("O estudante vinculado a esta conta nao foi encontrado.")
+    else:
+        aluno = aluno_encontrado.iloc[0]
+        st.success(f"Bem-vindo, responsavel por **{aluno['nome']}**!")
+        st.markdown("---")
+        st.subheader("Informacoes do Aluno")
+        st.write(f"Nome: {aluno['nome']}")
+        st.write(f"RA: {aluno['ra']}")
+        st.write(f"Turma: {aluno.get('turma', '')}")
+
+        ocorr_aluno = df_ocorrencias[df_ocorrencias["ra"].astype(str) == str(aluno["ra"])] if not df_ocorrencias.empty else pd.DataFrame()
+        if ocorr_aluno.empty:
+            st.info("Nenhuma ocorrencia registrada para este aluno.")
+        else:
+            st.write("Ocorrencias recentes:")
+            cols_show = [c for c in ["data", "categoria", "gravidade", "professor"] if c in ocorr_aluno.columns]
+            st.dataframe(ocorr_aluno[cols_show].head(20), use_container_width=True, hide_index=True)
 
 # ======================================================
 # PAGINA REGISTRAR OCORRENCIA
@@ -15502,11 +16452,9 @@ elif "HISTORICO DE OCORRENCIA" in normalizar_texto(menu):
                 key="select_excluir_id",
                 format_func=lambda x: mapa_ocorrencias.get(int(x), str(x)),
             )
-            senha = st.text_input("Digite a senha para excluir", type="password", key="senha_excluir")
             if st.button("🗑️ Excluir Ocorrência", type="secondary", use_container_width=True):
-                if senha != SENHA_EXCLUSAO:
-                    st.error("❌ Senha incorreta!")
-                    show_toast("Senha incorreta para exclusão.", "error")
+                if ACCESS_CONTEXT.role not in {"manager", "local"}:
+                    st.error("A exclusao exige uma conta de gestao autorizada.")
                 else:
                     sucesso = excluir_ocorrencia(int(id_excluir))
                     if sucesso:
@@ -16940,9 +17888,8 @@ elif "ALUNOS E TURMAS" in normalizar_texto(menu) or "IMPORTAR ALUNOS" in normali
 
                             col1, col2 = st.columns(2)
                             with col1:
-                                senha = st.text_input("Digite a senha para confirmar:", type="password", key="senha_excluir_aluno_tab3")
                                 if st.button("✅ Confirmar Exclusão", type="primary", key="confirm_excluir_aluno_tab3"):
-                                    if senha == SENHA_EXCLUSAO:
+                                    if ACCESS_CONTEXT.role in {"manager", "local"}:
                                         resposta_exclusao = _supabase_mutation("DELETE", f"alunos?ra=eq.{ra_excluir}", None, "excluir aluno")
                                         r = type("R", (), {"status_code": 204})()
                                         if resposta_exclusao:
@@ -16953,7 +17900,7 @@ elif "ALUNOS E TURMAS" in normalizar_texto(menu) or "IMPORTAR ALUNOS" in normali
                                         else:
                                             st.error("❌ Erro ao excluir aluno.")
                                     else:
-                                        st.error("❌ Senha incorreta!")
+                                        st.error("A exclusao exige uma conta de gestao autorizada.")
                             with col2:
                                 if st.button("❌ Cancelar", key="cancel_excluir_aluno_tab3"):
                                     del st.session_state.confirmar_exclusao_aluno
@@ -17243,190 +18190,1190 @@ elif "ALUNOS E TURMAS" in normalizar_texto(menu) or "IMPORTAR ALUNOS" in normali
 # ======================================================
 
 elif menu == "📄 Comunicado aos Pais":
-    page_header("📄 Comunicado aos Pais", "Gere comunicados individuais ou em lote para os responsáveis", "#7c3aed")
-    
+    page_header(
+        "📄 Comunicado aos Pais",
+        "Gere comunicados individuais ou em lote para os responsáveis",
+        "#7c3aed"
+    )
+
     st.markdown("""
     <div style="
         background:linear-gradient(135deg,#faf5ff,#ede9fe);
-        border:1.5px solid #c4b5fd; border-left:5px solid #7c3aed;
-        border-radius:16px; padding:1.1rem 1.5rem; margin-bottom:1.25rem;
+        border:1.5px solid #c4b5fd;
+        border-left:5px solid #7c3aed;
+        border-radius:16px;
+        padding:1.1rem 1.5rem;
+        margin-bottom:1.25rem;
         box-shadow:0 4px 12px rgba(124,58,237,0.08);
     ">
         <div style="display:flex;align-items:center;gap:0.5rem;">
             <span>📄</span>
-            <span style="color:#4c1d95;font-size:0.875rem;">Gere comunicados individuais ou em lote (ZIP) para envio aos pais e responsáveis.</span>
+            <span style="color:#4c1d95;font-size:0.875rem;">
+                Gere comunicados individuais ou em lote (ZIP) para envio aos pais e responsáveis.
+            </span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    if df_alunos.empty or df_ocorrencias.empty:
-        st.warning("⚠️ Cadastre alunos e ocorrências antes de gerar comunicados.")
-        st.stop()
+    # ------------------------------------------------------
+    # MODELOS DE COMUNICADO
+    # ------------------------------------------------------
 
-    modo = st.radio("Modo de geração", ["👤 Individual", "🏫 Por Turma(s)"], horizontal=True)
+    st.markdown("### 📋 Modelo do comunicado")
+
+    modelos_comunicado = {
+        "Atraso na entrada da escola": "atraso",
+        "Frequência e acompanhamento escolar": "faltas",
+        "Uso de dispositivos e rotina pedagógica": "celular",
+        "Convivência e respeito": "convivencia",
+        "Convivência, proteção e cultura de paz": "bullying",
+        "Segurança e permanência na escola": "saida",
+        "Acompanhamento pedagógico": "desempenho",
+        "Comunicado geral": "geral"
+    }
+
+    modelo_nome = st.selectbox(
+        "Selecione o modelo",
+        list(modelos_comunicado.keys()),
+        help="O modelo define a linguagem pedagógica utilizada no comunicado.",
+        key="modelo_comunicado_pais"
+    )
+
+    modelo_comunicado = modelos_comunicado[modelo_nome]
+
+    # ------------------------------------------------------
+    # DATA DO COMUNICADO
+    # ------------------------------------------------------
+
+    data_comunicado = st.date_input(
+        "Data do comunicado",
+        value=__import__("datetime").date.today(),
+        format="DD/MM/YYYY",
+        key="data_comunicado_pais"
+    )
+
+    # ------------------------------------------------------
+    # MEDIDAS
+    # ------------------------------------------------------
 
     medidas_opcoes = [
-        "Mediação de conflitos", "Registro em ata", "Notificação aos pais",
-        "Atividades de reflexão", "Termo de compromisso", "Ata circunstanciada",
-        "Conselho Tutelar", "Mudança de turma", "Acompanhamento psicológico",
-        "Reunião com pais", "Afastamento temporário", "B.O. registrado",
-        "Diretoria de Ensino", "Medidas protetivas"
+        "Mediação de conflitos",
+        "Registro em ata",
+        "Notificação aos pais",
+        "Atividades de reflexão",
+        "Termo de compromisso",
+        "Ata circunstanciada",
+        "Conselho Tutelar",
+        "Mudança de turma",
+        "Acompanhamento psicológico",
+        "Reunião com pais",
+        "Afastamento temporário",
+        "B.O. registrado",
+        "Diretoria de Ensino",
+        "Medidas protetivas"
     ]
 
+    # ------------------------------------------------------
+    # MODO DE GERAÇÃO
+    # ------------------------------------------------------
+
+    st.markdown("---")
+
+    modo = st.radio(
+        "Modo de geração",
+        [
+            "👤 Individual",
+            "👥 Vários alunos",
+            "📝 Formulário em branco",
+            "🏫 Por Turma(s)"
+        ],
+        horizontal=True,
+        key="modo_geracao_comunicado"
+    )
+
+    # ======================================================
+    # INDIVIDUAL
+    # ======================================================
+
     if modo == "👤 Individual":
-        st.subheader("👤 Seleção Individual")
-        
-        busca = st.text_input("🔍 Buscar aluno por nome ou RA", placeholder="Digite nome ou RA do aluno")
-        
-        if busca:
-            df_filtrado = df_alunos[
-                df_alunos["nome"].str.contains(busca, case=False, na=False) |
-                df_alunos["ra"].astype(str).str.contains(busca, na=False)
-            ]
-        else:
-            df_filtrado = df_alunos
-        
-        if df_filtrado.empty:
-            st.warning("⚠️ Nenhum aluno encontrado.")
+
+        st.markdown("### 👤 Seleção do estudante")
+
+        if df_alunos.empty:
+            st.warning("⚠️ Cadastre alunos antes de gerar um comunicado.")
             st.stop()
-        
-        aluno_sel = st.selectbox("Aluno", df_filtrado["nome"].tolist())
-        aluno_info = df_alunos[df_alunos["nome"] == aluno_sel].iloc[0]
-        ra_aluno = aluno_info["ra"]
-        
-        ocorrencias_aluno = df_ocorrencias[df_ocorrencias["ra"] == ra_aluno]
-        
+
+        nomes_alunos = sorted(
+            df_alunos["nome"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+            .tolist()
+        )
+
+        aluno_sel = st.selectbox(
+            "Buscar aluno por nome ou RA",
+            nomes_alunos,
+            key="aluno_comunicado_individual"
+        )
+
+        aluno_info = df_alunos[
+            df_alunos["nome"].astype(str).str.strip() == str(aluno_sel).strip()
+        ].iloc[0]
+
+        ra_aluno = str(aluno_info.get("ra", "")).strip()
+        nome_aluno = str(aluno_info.get("nome", "")).strip()
+        turma_aluno = str(aluno_info.get("turma", "")).strip()
+
+        if not df_ocorrencias.empty and "ra" in df_ocorrencias.columns:
+            ocorrencias_aluno = df_ocorrencias[
+                df_ocorrencias["ra"].astype(str).str.strip() == ra_aluno
+            ].copy()
+        else:
+            ocorrencias_aluno = pd.DataFrame()
+
+        # --------------------------------------------------
+        # DADOS DO ALUNO
+        # --------------------------------------------------
+
         st.markdown(f"""
         <div class="card">
             <div class="card-title">📋 Dados do Aluno</div>
-            <b>Nome:</b> {aluno_info['nome']}<br>
+            <b>Nome:</b> {nome_aluno}<br>
             <b>RA:</b> {ra_aluno}<br>
-            <b>Turma:</b> {aluno_info['turma']}<br>
+            <b>Turma:</b> {turma_aluno}<br>
             <b>Total de ocorrências:</b> {len(ocorrencias_aluno)}
         </div>
         """, unsafe_allow_html=True)
-        
-        if ocorrencias_aluno.empty:
-            st.info("ℹ️ Este aluno não possui ocorrências.")
-            st.stop()
-        
-        lista_ocorrencias = (ocorrencias_aluno["id"].astype(str) + " - " + 
-                            ocorrencias_aluno["data"] + " - " + 
-                            ocorrencias_aluno["categoria"])
-        
-        occ_sel = st.selectbox("Selecione a ocorrência", lista_ocorrencias.tolist())
-        occ_info = ocorrencias_aluno.iloc[lista_ocorrencias.tolist().index(occ_sel)]
-        
+
+        # --------------------------------------------------
+        # OCORRÊNCIA
+        # --------------------------------------------------
+
+        ocorrencia_data = {
+            "data": "",
+            "categoria": "",
+            "gravidade": "",
+            "professor": "",
+            "relato": "",
+            "encaminhamento": ""
+        }
+
+        if not ocorrencias_aluno.empty:
+
+            st.markdown("### ⚠️ Ocorrência relacionada")
+
+            lista_ocorrencias = (
+                ocorrencias_aluno["id"].astype(str)
+                + " - "
+                + ocorrencias_aluno["data"].astype(str)
+                + " - "
+                + ocorrencias_aluno["categoria"].astype(str)
+            )
+
+            occ_sel = st.selectbox(
+                "Selecione a ocorrência",
+                lista_ocorrencias.tolist(),
+                key="ocorrencia_comunicado_individual"
+            )
+
+            indice_occ = lista_ocorrencias.tolist().index(occ_sel)
+            occ_info = ocorrencias_aluno.iloc[indice_occ]
+
+            ocorrencia_data = {
+                "data": str(occ_info.get("data", "")),
+                "categoria": str(occ_info.get("categoria", "")),
+                "gravidade": str(occ_info.get("gravidade", "")),
+                "professor": str(occ_info.get("professor", "")),
+                "relato": str(occ_info.get("relato", "")),
+                "encaminhamento": str(occ_info.get("encaminhamento", "")),
+                "horario_chegada": str(occ_info.get("horario_chegada", "")),
+                "horario_permitido": str(occ_info.get("horario_permitido", "07:00")),
+                "justificativa": str(occ_info.get("justificativa", ""))
+            }
+
+        else:
+            st.info(
+                "ℹ️ Este aluno não possui ocorrências registradas. "
+                "Você ainda pode gerar um comunicado pedagógico, "
+                "administrativo ou geral."
+            )
+
+        # --------------------------------------------------
+        # MEDIDAS
+        # --------------------------------------------------
+
+        # ==================================================
+        # DADOS DO COMUNICADO DE ATRASO
+        # ==================================================
+
+        if modelo_comunicado == "atraso":
+
+            st.markdown("### Dados do atraso")
+
+            col_atraso_1, col_atraso_2 = st.columns(2)
+
+            with col_atraso_1:
+                horario_chegada_comunicado = st.text_input(
+                    "Horário de chegada",
+                    value=str(
+                        ocorrencia_data.get("horario_chegada", "")
+                    ).strip(),
+                    placeholder="Ex.: 07:18",
+                    key="comunicado_horario_chegada"
+                )
+
+            with col_atraso_2:
+                horario_permitido_comunicado = st.text_input(
+                    "Horário permitido",
+                    value=str(
+                        ocorrencia_data.get(
+                            "horario_permitido",
+                            "07:00"
+                        )
+                    ).strip() or "07:00",
+                    key="comunicado_horario_permitido"
+                )
+
+            justificativa_comunicado = st.text_area(
+                "Justificativa apresentada",
+                value=str(
+                    ocorrencia_data.get("justificativa", "")
+                ).strip(),
+                placeholder="Ex.: Transporte público atrasado.",
+                height=90,
+                key="comunicado_justificativa_atraso"
+            )
+
+            atrasos_semana_comunicado = 0
+            atrasos_mes_comunicado = 0
+            total_atrasos_aluno = 0
+
+            # Para ATRASO a data de referencia e SEMPRE a Data do comunicado.
+            # Nao usar data de outra ocorrencia (ex.: cabular aula em maio),
+            # senao os atrasos de setembro ficam zerados.
+            try:
+                data_ref = pd.to_datetime(data_comunicado)
+            except Exception:
+                data_ref = pd.to_datetime(
+                    ocorrencia_data.get("data", ""),
+                    errors="coerce",
+                    dayfirst=True
+                )
+            if pd.isna(data_ref):
+                data_ref = pd.Timestamp.now().normalize()
+
+            if (
+                not ocorrencias_aluno.empty
+                and "categoria" in ocorrencias_aluno.columns
+            ):
+                base_atrasos = ocorrencias_aluno.copy()
+                categorias_atraso = (
+                    base_atrasos["categoria"]
+                    .fillna("")
+                    .astype(str)
+                    .str.upper()
+                )
+                base_atrasos = base_atrasos[
+                    categorias_atraso.str.contains(
+                        "ATRASO|ATRASADO|PONTUALIDADE|CHEGAR",
+                        regex=True,
+                        na=False
+                    )
+                ].copy()
+
+                total_atrasos_aluno = len(base_atrasos)
+
+                if (
+                    not base_atrasos.empty
+                    and "data" in base_atrasos.columns
+                    and pd.notna(data_ref)
+                ):
+                    datas = pd.to_datetime(
+                        base_atrasos["data"],
+                        errors="coerce",
+                        dayfirst=True
+                    )
+                    inicio_semana = data_ref - pd.Timedelta(days=int(data_ref.weekday()))
+                    inicio_mes = data_ref.replace(day=1)
+
+                    atrasos_semana_comunicado = int(
+                        ((datas >= inicio_semana) & (datas <= data_ref)).sum()
+                    )
+                    atrasos_mes_comunicado = int(
+                        ((datas >= inicio_mes) & (datas <= data_ref)).sum()
+                    )
+
+            # Contagem principal: comunicados de atraso do aluno (tabela comunicados)
+            try:
+                def _so_digitos(v):
+                    return "".join(ch for ch in str(v or "") if ch.isdigit())
+
+                ra_ref = _so_digitos(ra_aluno)
+                df_com = carregar_comunicados()
+                if df_com is not None and not df_com.empty and ra_ref:
+                    df_ca = df_com.copy()
+                    if "ra_aluno" in df_ca.columns:
+                        df_ca["_ra"] = df_ca["ra_aluno"].map(_so_digitos)
+                        df_ca = df_ca[df_ca["_ra"] == ra_ref]
+                    if "tipo_comunicado" in df_ca.columns:
+                        df_ca = df_ca[
+                            df_ca["tipo_comunicado"].astype(str).str.lower().str.contains("atraso", na=False)
+                            | df_ca.get("modelo", pd.Series(dtype=str)).astype(str).str.lower().str.contains("atraso", na=False)
+                        ]
+                    total_atrasos_aluno = max(total_atrasos_aluno, len(df_ca))
+                    if not df_ca.empty and "data_comunicado" in df_ca.columns and pd.notna(data_ref):
+                        datas_c = pd.to_datetime(df_ca["data_comunicado"], errors="coerce")
+                        inicio_semana = data_ref - pd.Timedelta(days=int(data_ref.weekday()))
+                        inicio_mes = data_ref.replace(day=1)
+                        # recontagem limpa a partir dos comunicados (fonte oficial do atraso)
+                        atrasos_semana_comunicado = int(
+                            ((datas_c >= inicio_semana) & (datas_c <= data_ref)).sum()
+                        )
+                        atrasos_mes_comunicado = int(
+                            ((datas_c >= inicio_mes) & (datas_c <= data_ref)).sum()
+                        )
+            except Exception as e:
+                try:
+                    logger.warning(f"Falha ao contar comunicados de atraso: {e}")
+                except Exception:
+                    pass
+
+            ocorrencia_data["total_atrasos_aluno"] = total_atrasos_aluno
+
+            col_contagem_1, col_contagem_2 = st.columns(2)
+
+            with col_contagem_1:
+                st.metric(
+                    "Atrasos na semana",
+                    atrasos_semana_comunicado
+                )
+
+            with col_contagem_2:
+                st.metric(
+                    "Atrasos no mês",
+                    atrasos_mes_comunicado
+                )
+
+            ocorrencia_data["horario_chegada"] = (
+                horario_chegada_comunicado.strip()
+            )
+
+            ocorrencia_data["horario_permitido"] = (
+                horario_permitido_comunicado.strip()
+                or "07:00"
+            )
+
+            ocorrencia_data["justificativa"] = (
+                justificativa_comunicado.strip()
+            )
+
+            ocorrencia_data["atrasos_semana"] = (
+                atrasos_semana_comunicado
+            )
+
+            ocorrencia_data["atrasos_mes"] = (
+                atrasos_mes_comunicado
+            )
+
         st.subheader("⚖️ Medidas Aplicadas")
+
         medidas_aplicadas = []
+
+        cols = st.columns(3)
+
+        for i, medida in enumerate(medidas_opcoes):
+            with cols[i % 3]:
+                if st.checkbox(
+                    medida,
+                    key=f"medida_ind_{modelo_comunicado}_{medida}"
+                ):
+                    medidas_aplicadas.append(medida)
+
+        # --------------------------------------------------
+        # OBSERVAÇÕES
+        # --------------------------------------------------
+
+        observacoes = st.text_area(
+            "📝 Observações adicionais",
+            height=100,
+            key="observacoes_comunicado_individual",
+            placeholder="Digite informações adicionais que deseja incluir no comunicado."
+        )
+
+        # --------------------------------------------------
+        # RESUMO
+        # --------------------------------------------------
+
+        st.markdown("### 📝 Resumo da geração")
+
+        st.info(
+            f"Modelo selecionado: **{modelo_nome}**\n\n"
+            f"Estudante: **{nome_aluno}**\n\n"
+            f"Turma: **{turma_aluno}**\n\n"
+            f"Ocorrências encontradas: **{len(ocorrencias_aluno)}**"
+        )
+
+        # --------------------------------------------------
+        # GERAR PDF
+        # --------------------------------------------------
+
+        # --------------------------------------------------
+        # GRAVAR COMUNICADO
+        # --------------------------------------------------
+
+        if st.button(
+            "💾 Gravar Comunicado",
+            type="secondary",
+            use_container_width=True,
+            key="gravar_comunicado_individual"
+        ):
+            try:
+                dados_comunicado = {
+                    "data_comunicado": (
+                        data_comunicado.strftime("%Y-%m-%d")
+                        if hasattr(data_comunicado, "strftime")
+                        else str(data_comunicado)
+                    ),
+                    "ra_aluno": str(ra_aluno).strip(),
+                    "nome_aluno": str(nome_aluno).strip(),
+                    "turma": str(turma_aluno).strip(),
+                    "tipo_comunicado": str(modelo_comunicado).strip() or "geral",
+                    "modelo": str(modelo_comunicado).strip() or "geral",
+                    "horario_permitido": str(
+                        ocorrencia_data.get("horario_permitido", "")
+                    ).strip(),
+                    "horario_chegada": str(
+                        ocorrencia_data.get("horario_chegada", "")
+                    ).strip(),
+                    "justificativa": str(
+                        ocorrencia_data.get("justificativa", "")
+                    ).strip(),
+                    "medidas_aplicadas": "\n".join(medidas_aplicadas),
+                    "observacoes": str(observacoes).strip(),
+                    "professor_responsavel": str(
+                        ocorrencia_data.get("professor", "")
+                    ).strip() or "Equipe escolar",
+                    "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+
+                sucesso_gravacao = salvar_comunicado(dados_comunicado)
+
+                if sucesso_gravacao:
+                    st.success(
+                        f"✅ Comunicado de {data_comunicado.strftime(
+                            "%d/%m/%Y"
+                        )} gravado com sucesso para {nome_aluno}."
+                    )
+                else:
+                    st.error(
+                        "❌ O comunicado nao foi gravado. "
+                        "Verifique a conexao com o banco de dados."
+                    )
+
+            except Exception as e:
+                st.error(
+                    f"❌ Erro ao gravar o comunicado: {e}"
+                )
+
+        # --------------------------------------------------
+        # GERAR PDF
+        # --------------------------------------------------
+
+        if st.button(
+            "📄 Gerar Comunicado (PDF)",
+            type="primary",
+            use_container_width=True,
+            key="gerar_comunicado_individual"
+        ):
+
+            # Opção A: atraso sempre grava ocorrência automaticamente
+            if str(modelo_comunicado).lower() == "atraso":
+                data_reg = datetime.now().strftime("%d/%m/%Y %H:%M")
+                horario_c = str(ocorrencia_data.get("horario_chegada", "")).strip()
+                horario_p = str(ocorrencia_data.get("horario_permitido", "07:00")).strip() or "07:00"
+                just = str(ocorrencia_data.get("justificativa", "")).strip() or "Não informada."
+                relato_atraso = (
+                    f"Atraso na entrada da escola. "
+                    f"Horário permitido: {horario_p}. "
+                    f"Horário de chegada: {horario_c or 'Não informado'}. "
+                    f"Justificativa: {just}."
+                )
+                nova_ocorrencia = {
+                    "data": data_reg,
+                    "aluno": nome_aluno,
+                    "ra": ra_aluno,
+                    "turma": turma_aluno,
+                    "categoria": "Chegar atrasado",
+                    "gravidade": "Leve",
+                    "relato": relato_atraso,
+                    "encaminhamento": (
+                        "Registrar em ata\n"
+                        "Conversar com o aluno\n"
+                        "Notificar famílias (se recorrente)\n"
+                        "Verificar motivo dos atrasos\n"
+                        "Orientação Educacional"
+                    ),
+                    "professor": str(ocorrencia_data.get("professor", "")).strip() or "Equipe escolar",
+                }
+                try:
+                    df_base = df_ocorrencias if "df_ocorrencias" in dir() else pd.DataFrame()
+                    if not verificar_ocorrencia_duplicada(ra_aluno, "Chegar atrasado", data_reg, df_base):
+                        if salvar_ocorrencia(nova_ocorrencia):
+                            st.success("✅ Ocorrência de atraso registrada automaticamente.")
+                            carregar_ocorrencias.clear()
+                    ocorrencia_data["categoria"] = "Chegar atrasado"
+                    ocorrencia_data["data"] = data_reg
+                    ocorrencia_data["relato"] = relato_atraso
+                except Exception as e:
+                    st.warning(f"PDF será gerado, mas falhou o registro da ocorrência: {e}")
+
+            total_ocorrencias_pdf = len(ocorrencias_aluno)
+            if str(modelo_comunicado).lower() == "atraso":
+                total_ocorrencias_pdf = len(ocorrencias_aluno) + 1
+
+            aluno_data = {
+                "nome": nome_aluno,
+                "ra": ra_aluno,
+                "turma": turma_aluno,
+                "total_ocorrencias": total_ocorrencias_pdf
+            }
+
+            pdf_buffer = gerar_pdf_comunicado(
+                aluno_data=aluno_data,
+                ocorrencia_data=ocorrencia_data,
+                medidas_aplicadas="\n".join(medidas_aplicadas),
+                observacoes=observacoes,
+                df_responsaveis=df_responsaveis,
+                modelo=modelo_comunicado,
+                data_comunicado=data_comunicado
+            )
+
+            st.download_button(
+                "📥 Baixar Comunicado (PDF)",
+                data=pdf_buffer.getvalue(),
+                file_name=(
+                    f"Comunicado_{ra_aluno}_"
+                    f"{datetime.now().strftime('%Y%m%d')}.pdf"
+                ),
+                mime="application/pdf",
+                use_container_width=True,
+                key="download_comunicado_individual"
+            )
+
+            st.success(
+                f"✅ Comunicado '{modelo_nome}' gerado com sucesso!"
+            )
+
+    # ======================================================
+    # VÁRIOS ALUNOS
+    # ======================================================
+
+    elif modo == "👥 Vários alunos":
+
+        st.markdown("### 👥 Seleção de vários estudantes")
+
+        if df_alunos.empty:
+            st.warning("⚠️ Cadastre alunos antes de gerar comunicados.")
+            st.stop()
+
+        turmas_filtro = sorted(
+            df_alunos["turma"].dropna().astype(str).str.strip().unique().tolist()
+        )
+        turmas_filtro_sel = st.multiselect(
+            "Filtrar por turma (opcional)",
+            turmas_filtro,
+            key="filtro_turma_varios_comunicado"
+        )
+
+        base_sel = df_alunos.copy()
+        if turmas_filtro_sel:
+            base_sel = base_sel[
+                base_sel["turma"].astype(str).str.strip().isin(turmas_filtro_sel)
+            ]
+
+        opcoes_alunos = (
+            base_sel.sort_values(["turma", "nome"])
+            .apply(
+                lambda r: f"{str(r.get('nome','')).strip()} | {str(r.get('turma','')).strip()} | RA {str(r.get('ra','')).strip()}",
+                axis=1
+            )
+            .tolist()
+        )
+
+        alunos_sel = st.multiselect(
+            "Selecione os estudantes",
+            opcoes_alunos,
+            key="alunos_varios_comunicado"
+        )
+
+        if not alunos_sel:
+            st.info("ℹ️ Selecione ao menos um estudante.")
+            st.stop()
+
+        st.success(f"📊 {len(alunos_sel)} estudante(s) selecionado(s).")
+
+        ocorrencia_data = {
+            "data": data_comunicado.strftime("%d/%m/%Y") if data_comunicado else "",
+            "categoria": "",
+            "gravidade": "",
+            "professor": "",
+            "relato": "",
+            "encaminhamento": "",
+            "horario_chegada": "",
+            "horario_permitido": "07:00",
+            "justificativa": "",
+        }
+
+        if modelo_comunicado == "atraso":
+            st.markdown("### Dados do atraso (comuns a todos)")
+            c1, c2 = st.columns(2)
+            with c1:
+                horario_chegada_varios = st.text_input(
+                    "Horário de chegada",
+                    value="",
+                    placeholder="Ex.: 07:18",
+                    key="varios_horario_chegada"
+                )
+            with c2:
+                horario_permitido_varios = st.text_input(
+                    "Horário permitido",
+                    value="07:00",
+                    key="varios_horario_permitido"
+                )
+            justificativa_varios = st.text_area(
+                "Justificativa apresentada",
+                value="",
+                height=80,
+                key="varios_justificativa"
+            )
+            ocorrencia_data["horario_chegada"] = horario_chegada_varios.strip()
+            ocorrencia_data["horario_permitido"] = (horario_permitido_varios.strip() or "07:00")
+            ocorrencia_data["justificativa"] = justificativa_varios.strip()
+            ocorrencia_data["categoria"] = "Chegar atrasado"
+
+        medidas_aplicadas = []
+        st.subheader("⚖️ Medidas")
         cols = st.columns(3)
         for i, medida in enumerate(medidas_opcoes):
             with cols[i % 3]:
-                if st.checkbox(medida, key=f"medida_ind_{medida}"):
+                if st.checkbox(medida, key=f"medida_varios_{modelo_comunicado}_{medida}"):
                     medidas_aplicadas.append(medida)
-        
-        observacoes = st.text_area("📝 Observações adicionais", height=80)
-        
-        if st.button("📄 Gerar Comunicado (PDF)", type="primary"):
-            aluno_data = {
-                "nome": aluno_info["nome"],
-                "ra": ra_aluno,
-                "turma": aluno_info["turma"],
-                "total_ocorrencias": len(ocorrencias_aluno)
-            }
-            ocorrencia_data = {
-                "data": occ_info["data"],
-                "categoria": occ_info["categoria"],
-                "gravidade": occ_info["gravidade"],
-                "professor": occ_info["professor"],
-                "relato": occ_info["relato"],
-                "encaminhamento": occ_info["encaminhamento"]
-            }
-            
-            pdf_buffer = gerar_pdf_comunicado(
-                aluno_data, ocorrencia_data,
-                "\n".join(medidas_aplicadas), observacoes, df_responsaveis
-            )
-            
+
+        observacoes = st.text_area(
+            "📝 Observações",
+            height=80,
+            key="observacoes_varios_comunicado"
+        )
+
+        if st.button(
+            "💾 Salvar comunicados selecionados",
+            type="secondary",
+            use_container_width=True,
+            key="salvar_comunicado_varios"
+        ):
+            salvos = 0
+            falhas = 0
+            for item in alunos_sel:
+                partes = [p.strip() for p in item.split("|")]
+                nome = partes[0] if len(partes) > 0 else ""
+                turma = partes[1] if len(partes) > 1 else ""
+                ra = partes[2].replace("RA", "").strip() if len(partes) > 2 else ""
+                dados_comunicado = {
+                    "data_comunicado": (
+                        data_comunicado.strftime("%Y-%m-%d")
+                        if hasattr(data_comunicado, "strftime")
+                        else str(data_comunicado)
+                    ),
+                    "ra_aluno": ra,
+                    "nome_aluno": nome,
+                    "turma": turma,
+                    "tipo_comunicado": str(modelo_comunicado).strip() or "geral",
+                    "modelo": str(modelo_comunicado).strip() or "geral",
+                    "horario_permitido": str(ocorrencia_data.get("horario_permitido", "")).strip(),
+                    "horario_chegada": str(ocorrencia_data.get("horario_chegada", "")).strip(),
+                    "justificativa": str(ocorrencia_data.get("justificativa", "")).strip(),
+                    "medidas_aplicadas": "\n".join(medidas_aplicadas),
+                    "observacoes": str(observacoes).strip(),
+                    "professor_responsavel": "Equipe escolar",
+                    "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                try:
+                    if salvar_comunicado(dados_comunicado):
+                        salvos += 1
+                    else:
+                        falhas += 1
+                except Exception:
+                    falhas += 1
+            if salvos:
+                st.success(f"✅ {salvos} comunicado(s) salvo(s) no banco.")
+                try:
+                    carregar_comunicados.clear()
+                except Exception:
+                    pass
+            if falhas:
+                st.error(f"❌ {falhas} falha(s) ao salvar.")
+
+        if st.button(
+            "📦 Gerar PDFs dos selecionados (ZIP)",
+            type="primary",
+            use_container_width=True,
+            key="gerar_comunicado_varios"
+        ):
+            zip_buffer = BytesIO()
+            total_gerados = 0
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                for item in alunos_sel:
+                    partes = [p.strip() for p in item.split("|")]
+                    nome = partes[0] if len(partes) > 0 else ""
+                    turma = partes[1] if len(partes) > 1 else ""
+                    ra = partes[2].replace("RA", "").strip() if len(partes) > 2 else ""
+
+                    aluno_data = {
+                        "nome": nome,
+                        "ra": ra,
+                        "turma": turma,
+                        "total_ocorrencias": 0,
+                    }
+
+                    pdf = gerar_pdf_comunicado(
+                        aluno_data=aluno_data,
+                        ocorrencia_data=ocorrencia_data,
+                        medidas_aplicadas="\n".join(medidas_aplicadas),
+                        observacoes=observacoes,
+                        df_responsaveis=df_responsaveis,
+                        modelo=modelo_comunicado,
+                        data_comunicado=data_comunicado,
+                    )
+
+                    nome_seguro = "".join(
+                        ch if ch.isalnum() or ch in ("_", "-") else "_"
+                        for ch in nome.replace(" ", "_")
+                    )
+                    nome_pdf = f"Comunicado_{ra}_{nome_seguro}.pdf"
+                    zip_file.writestr(nome_pdf, pdf.getvalue())
+                    total_gerados += 1
+
+            zip_buffer.seek(0)
             st.download_button(
-                "📥 Baixar Comunicado (PDF)",
-                data=pdf_buffer,
-                file_name=f"Comunicado_{ra_aluno}_{datetime.now().strftime('%Y%m%d')}.pdf",
-                mime="application/pdf"
+                "📥 Baixar ZIP",
+                data=zip_buffer.getvalue(),
+                file_name=f"Comunicados_varios_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
+                mime="application/zip",
+                use_container_width=True,
+                key="download_comunicados_varios"
             )
-            st.success("✅ Comunicado gerado com sucesso!")
+            st.success(f"✅ {total_gerados} comunicado(s) gerado(s).")
+
+    # ======================================================
+    # FORMULÁRIO EM BRANCO (PREENCHIMENTO MANUAL)
+    # ======================================================
+
+    elif modo == "📝 Formulário em branco":
+
+        st.markdown("### 📝 Comunicado em branco")
+        st.info(
+            "Gera o PDF com Nome, RA e Turma em branco para preenchimento manual. "
+            "Útil quando o estudante ainda não está na base."
+        )
+
+        ocorrencia_data = {
+            "data": data_comunicado.strftime("%d/%m/%Y") if data_comunicado else "",
+            "categoria": "Chegar atrasado" if modelo_comunicado == "atraso" else "",
+            "gravidade": "",
+            "professor": "",
+            "relato": "",
+            "encaminhamento": "",
+            "horario_chegada": "",
+            "horario_permitido": "07:00",
+            "justificativa": "",
+        }
+
+        if modelo_comunicado == "atraso":
+            st.markdown("### Dados do atraso (opcional)")
+            c1, c2 = st.columns(2)
+            with c1:
+                h_cheg = st.text_input("Horário de chegada", key="branco_horario_chegada")
+            with c2:
+                h_perm = st.text_input("Horário permitido", value="07:00", key="branco_horario_permitido")
+            just = st.text_area("Justificativa", height=70, key="branco_justificativa")
+            ocorrencia_data["horario_chegada"] = h_cheg.strip()
+            ocorrencia_data["horario_permitido"] = h_perm.strip() or "07:00"
+            ocorrencia_data["justificativa"] = just.strip()
+
+        medidas_aplicadas = []
+        st.subheader("⚖️ Medidas")
+        cols = st.columns(3)
+        for i, medida in enumerate(medidas_opcoes):
+            with cols[i % 3]:
+                if st.checkbox(medida, key=f"medida_branco_{modelo_comunicado}_{medida}"):
+                    medidas_aplicadas.append(medida)
+
+        observacoes = st.text_area(
+            "📝 Observações",
+            height=80,
+            key="observacoes_branco_comunicado"
+        )
+
+        if st.button(
+            "💾 Salvar registro em branco",
+            type="secondary",
+            use_container_width=True,
+            key="salvar_comunicado_branco"
+        ):
+            dados_comunicado = {
+                "data_comunicado": (
+                    data_comunicado.strftime("%Y-%m-%d")
+                    if hasattr(data_comunicado, "strftime")
+                    else str(data_comunicado)
+                ),
+                "ra_aluno": "",
+                "nome_aluno": "A PREENCHER",
+                "turma": "",
+                "tipo_comunicado": str(modelo_comunicado).strip() or "geral",
+                "modelo": str(modelo_comunicado).strip() or "geral",
+                "horario_permitido": str(ocorrencia_data.get("horario_permitido", "")).strip(),
+                "horario_chegada": str(ocorrencia_data.get("horario_chegada", "")).strip(),
+                "justificativa": str(ocorrencia_data.get("justificativa", "")).strip(),
+                "medidas_aplicadas": "\n".join(medidas_aplicadas),
+                "observacoes": str(observacoes).strip(),
+                "professor_responsavel": "Equipe escolar",
+                "criado_em": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            try:
+                if salvar_comunicado(dados_comunicado):
+                    st.success("✅ Registro em branco salvo no banco.")
+                    try:
+                        carregar_comunicados.clear()
+                    except Exception:
+                        pass
+                else:
+                    st.error("❌ Nao foi possivel salvar.")
+            except Exception as e:
+                st.error(f"❌ Erro ao salvar: {e}")
+
+        if st.button(
+            "📄 Gerar PDF em branco",
+            type="primary",
+            use_container_width=True,
+            key="gerar_comunicado_branco"
+        ):
+            aluno_data = {
+                "nome": "",
+                "ra": "",
+                "turma": "",
+                "total_ocorrencias": "",
+                "formulario_branco": True,
+            }
+            ocorrencia_data["formulario_branco"] = True
+            ocorrencia_data["horario_permitido"] = ""
+            ocorrencia_data["horario_chegada"] = ""
+            ocorrencia_data["justificativa"] = ""
+            ocorrencia_data["atrasos_semana"] = ""
+            ocorrencia_data["atrasos_mes"] = ""
+            pdf = gerar_pdf_comunicado(
+                aluno_data=aluno_data,
+                ocorrencia_data=ocorrencia_data,
+                medidas_aplicadas="\n".join(medidas_aplicadas),
+                observacoes=observacoes,
+                df_responsaveis=df_responsaveis,
+                modelo=modelo_comunicado,
+                data_comunicado=data_comunicado,
+            )
+            st.download_button(
+                "📥 Baixar PDF em branco",
+                data=pdf.getvalue(),
+                file_name=f"Comunicado_em_branco_{datetime.now().strftime('%Y%m%d')}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+                key="download_comunicado_branco"
+            )
+            st.success("✅ PDF em branco gerado.")
+
+    # POR TURMAS
+    # ======================================================
 
     else:
+
         st.subheader("🏫 Comunicado por Turmas")
-        
-        turmas_sel = st.multiselect("Selecione as turmas", sorted(df_alunos["turma"].unique().tolist()))
-        
+
+        if df_alunos.empty:
+            st.warning("⚠️ Cadastre alunos antes de gerar comunicados.")
+            st.stop()
+
+        turmas_disponiveis = sorted(
+            df_alunos["turma"]
+            .dropna()
+            .astype(str)
+            .str.strip()
+            .unique()
+            .tolist()
+        )
+
+        turmas_sel = st.multiselect(
+            "Selecione as turmas",
+            turmas_disponiveis,
+            key="turmas_comunicado_lote"
+        )
+
         if not turmas_sel:
             st.info("ℹ️ Selecione ao menos uma turma.")
             st.stop()
-        
-        alunos_turmas = df_alunos[df_alunos["turma"].isin(turmas_sel)]
-        alunos_com_ocorrencias = [
-            aluno for _, aluno in alunos_turmas.iterrows()
-            if not df_ocorrencias[df_ocorrencias["ra"] == aluno["ra"]].empty
-        ]
-        
-        if not alunos_com_ocorrencias:
-            st.warning("⚠️ Nenhum aluno com ocorrência nas turmas selecionadas.")
+
+        alunos_turmas = df_alunos[
+            df_alunos["turma"].astype(str).str.strip().isin(turmas_sel)
+        ].copy()
+
+        if alunos_turmas.empty:
+            st.warning("⚠️ Nenhum aluno encontrado nas turmas selecionadas.")
             st.stop()
-        
-        st.success(f"📊 {len(alunos_com_ocorrencias)} alunos com ocorrências encontrados.")
-        
+
+        st.success(
+            f"📊 {len(alunos_turmas)} alunos encontrados nas turmas selecionadas."
+        )
+
+        # --------------------------------------------------
+        # MEDIDAS PARA O LOTE
+        # --------------------------------------------------
+
         st.subheader("⚖️ Medidas para o Lote")
+
         medidas_aplicadas = []
+
         cols = st.columns(3)
+
         for i, medida in enumerate(medidas_opcoes):
             with cols[i % 3]:
-                if st.checkbox(medida, key=f"medida_lote_{medida}"):
+                if st.checkbox(
+                    medida,
+                    key=f"medida_lote_{modelo_comunicado}_{medida}"
+                ):
                     medidas_aplicadas.append(medida)
-        
-        observacoes = st.text_area("📝 Observações gerais", height=80)
-        
-        if st.button("📦 Gerar Comunicados em Lote (ZIP)", type="primary"):
+
+        observacoes = st.text_area(
+            "📝 Observações gerais",
+            height=100,
+            key="observacoes_comunicado_lote",
+            placeholder="Informações adicionais que serão utilizadas nos comunicados."
+        )
+
+        # --------------------------------------------------
+        # RESUMO
+        # --------------------------------------------------
+
+        st.info(
+            f"Modelo: **{modelo_nome}**  |  "
+            f"Alunos: **{len(alunos_turmas)}**  |  "
+            f"Turmas: **{', '.join(turmas_sel)}**"
+        )
+
+        # --------------------------------------------------
+        # GERAR ZIP
+        # --------------------------------------------------
+
+        if st.button(
+            "📦 Gerar Comunicados em Lote (ZIP)",
+            type="primary",
+            use_container_width=True,
+            key="gerar_comunicados_lote"
+        ):
+
             zip_buffer = BytesIO()
-            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                for aluno in alunos_com_ocorrencias:
-                    ra = aluno["ra"]
-                    ocorrencias = df_ocorrencias[df_ocorrencias["ra"] == ra].sort_values("data", ascending=False)
-                    occ = ocorrencias.iloc[0]
-                    
+
+            total_gerados = 0
+
+            with zipfile.ZipFile(
+                zip_buffer,
+                "w",
+                zipfile.ZIP_DEFLATED
+            ) as zip_file:
+
+                for _, aluno in alunos_turmas.iterrows():
+
+                    ra = str(aluno.get("ra", "")).strip()
+                    nome = str(aluno.get("nome", "")).strip()
+                    turma = str(aluno.get("turma", "")).strip()
+
+                    if (
+                        not df_ocorrencias.empty
+                        and "ra" in df_ocorrencias.columns
+                    ):
+                        ocorrencias = df_ocorrencias[
+                            df_ocorrencias["ra"].astype(str).str.strip() == ra
+                        ].copy()
+
+                        if not ocorrencias.empty:
+                            ocorrencias = ocorrencias.sort_values(
+                                "data",
+                                ascending=False
+                            )
+                            occ = ocorrencias.iloc[0]
+
+                            ocorrencia_data = {
+                                "data": str(occ.get("data", "")),
+                                "categoria": str(occ.get("categoria", "")),
+                                "gravidade": str(occ.get("gravidade", "")),
+                                "professor": str(occ.get("professor", "")),
+                                "relato": str(occ.get("relato", "")),
+                                "encaminhamento": str(occ.get("encaminhamento", ""))
+                            }
+                        else:
+                            ocorrencias = pd.DataFrame()
+                            ocorrencia_data = {
+                                "data": "",
+                                "categoria": "",
+                                "gravidade": "",
+                                "professor": "",
+                                "relato": "",
+                                "encaminhamento": ""
+                            }
+                    else:
+                        ocorrencias = pd.DataFrame()
+                        ocorrencia_data = {
+                            "data": "",
+                            "categoria": "",
+                            "gravidade": "",
+                            "professor": "",
+                            "relato": "",
+                            "encaminhamento": ""
+                        }
+
                     aluno_data = {
-                        "nome": aluno["nome"],
+                        "nome": nome,
                         "ra": ra,
-                        "turma": aluno["turma"],
+                        "turma": turma,
                         "total_ocorrencias": len(ocorrencias)
                     }
-                    ocorrencia_data = {
-                        "data": occ["data"],
-                        "categoria": occ["categoria"],
-                        "gravidade": occ["gravidade"],
-                        "professor": occ["professor"],
-                        "relato": occ["relato"],
-                        "encaminhamento": occ["encaminhamento"]
-                    }
-                    
+
                     pdf = gerar_pdf_comunicado(
-                        aluno_data, ocorrencia_data,
-                        "\n".join(medidas_aplicadas), observacoes, df_responsaveis
+                        aluno_data=aluno_data,
+                        ocorrencia_data=ocorrencia_data,
+                        medidas_aplicadas="\n".join(medidas_aplicadas),
+                        observacoes=observacoes,
+                        df_responsaveis=df_responsaveis,
+                        modelo=modelo_comunicado,
+                        data_comunicado=data_comunicado
                     )
-                    
-                    nome_pdf = f"Comunicado_{ra}_{aluno['nome'].replace(' ', '_')}.pdf"
-                    zip_file.writestr(nome_pdf, pdf.getvalue())
-            
+
+                    nome_seguro = (
+                        nome
+                        .replace("/", "_")
+                        .replace("\\", "_")
+                        .replace(":", "_")
+                        .replace("*", "_")
+                        .replace("?", "_")
+                        .replace('"', "_")
+                        .replace("<", "_")
+                        .replace(">", "_")
+                        .replace("|", "_")
+                        .replace(" ", "_")
+                    )
+
+                    nome_pdf = f"Comunicado_{ra}_{nome_seguro}.pdf"
+
+                    zip_file.writestr(
+                        nome_pdf,
+                        pdf.getvalue()
+                    )
+
+                    total_gerados += 1
+
             zip_buffer.seek(0)
+
             st.download_button(
                 "📥 Baixar ZIP de Comunicados",
-                data=zip_buffer,
-                file_name=f"Comunicados_{datetime.now().strftime('%Y%m%d_%H%M')}.zip",
-                mime="application/zip"
+                data=zip_buffer.getvalue(),
+                file_name=(
+                    f"Comunicados_"
+                    f"{datetime.now().strftime('%Y%m%d_%H%M')}.zip"
+                ),
+                mime="application/zip",
+                use_container_width=True,
+                key="download_comunicados_lote"
             )
-            st.success("✅ Comunicados em lote gerados com sucesso!")
-            # ======================================================
+
+            st.success(
+                f"✅ {total_gerados} comunicado(s) gerado(s) "
+                f"com o modelo '{modelo_nome}'."
+            )
+
+    # ======================================================
+    # ======================================================
+    # COMUNICADOS SALVOS - HISTORICO
+    # ======================================================
+
+    st.markdown("---")
+    st.subheader("📚 Comunicados salvos")
+
+    try:
+        df_comunicados_salvos = carregar_comunicados()
+
+        if df_comunicados_salvos is None or df_comunicados_salvos.empty:
+            st.info("📭 Nenhum comunicado salvo ainda.")
+        else:
+            df_exibicao_comunicados = df_comunicados_salvos.copy()
+
+            # Formata a data somente para exibicao.
+            if "data_comunicado" in df_exibicao_comunicados.columns:
+                df_exibicao_comunicados["data_comunicado"] = pd.to_datetime(
+                    df_exibicao_comunicados["data_comunicado"],
+                    errors="coerce"
+                ).dt.strftime("%d/%m/%Y")
+
+            colunas_comunicados = [
+                "data_comunicado",
+                "nome_aluno",
+                "ra_aluno",
+                "turma",
+                "tipo_comunicado",
+                "modelo",
+                "horario_permitido",
+                "horario_chegada"
+            ]
+
+            colunas_disponiveis = [
+                coluna
+                for coluna in colunas_comunicados
+                if coluna in df_exibicao_comunicados.columns
+            ]
+
+            tabela_comunicados = df_exibicao_comunicados[colunas_disponiveis].copy()
+
+            nomes_colunas = {
+                "data_comunicado": "Data",
+                "nome_aluno": "Aluno",
+                "ra_aluno": "RA",
+                "turma": "Turma",
+                "tipo_comunicado": "Tipo",
+                "modelo": "Modelo",
+                "horario_permitido": "Horário permitido",
+                "horario_chegada": "Horário de chegada"
+            }
+
+            tabela_comunicados = tabela_comunicados.rename(
+                columns=nomes_colunas
+            )
+
+            st.dataframe(
+                tabela_comunicados,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.caption(
+                f"Total de comunicados salvos: {len(tabela_comunicados)}"
+            )
+
+    except Exception as e:
+        st.warning(
+            f"⚠️ Nao foi possivel carregar os comunicados salvos: {e}"
+        )
+
+
+
+
+
 # PÁGINA 📊 GRÁFICOS E INDICADORES (COMPLETA)
 # ======================================================
 
@@ -17898,7 +19845,942 @@ elif menu == "👨‍🏫 Cadastrar Professores":
                     st.rerun()
     else:
         st.info("📭 Nenhum professor cadastrado.")
-        # ======================================================
+
+
+    # --------------------------------------------------
+    # ABAS: Cadastro | Grade de horarios
+    # --------------------------------------------------
+    aba_cad_prof, aba_grade_prof, aba_janelas_prof = st.tabs([
+        "👥 Cadastro de professores",
+        "📅 Grade de horários (Turno 1)",
+        "🍽️ Almoço e Hora de Estudos"
+    ])
+
+
+    with aba_grade_prof:
+        st.subheader("Grade de horarios - Turno 1")
+        st.caption("Padrao: disciplina em MAIUSCULAS | professor com iniciais maiusculas")
+
+        try:
+            carregar_grade_horaria.clear()
+        except Exception:
+            pass
+
+        try:
+            df_grade = carregar_grade_horaria("Turno 1", 2026)
+        except Exception:
+            df_grade = pd.DataFrame()
+
+        if df_grade is None or df_grade.empty:
+            st.warning("Grade ainda nao importada.")
+        else:
+            def _fmt_disc(v):
+                return str(v or "").strip().upper()
+
+            def _fmt_prof(v):
+                s = str(v or "").strip()
+                if not s:
+                    return s
+                partes = s.replace("_", " ").split()
+                out = []
+                for p in partes:
+                    if len(p) <= 2 and p.endswith("."):
+                        out.append(p[0].upper() + ".")
+                    else:
+                        out.append(p[:1].upper() + p[1:].lower())
+                return " ".join(out)
+
+            def _norm(v):
+                return normalizar_texto(str(v or ""))
+
+            df_g = df_grade.copy()
+            df_g["disciplina"] = df_g["disciplina"].map(_fmt_disc)
+            df_g["professor"] = df_g["professor"].map(_fmt_prof)
+            df_g["aula"] = pd.to_numeric(df_g["aula"], errors="coerce").fillna(0).astype(int)
+
+            professores = sorted({p for p in df_g["professor"] if p})
+            dias_ord = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
+
+            modo = st.radio(
+                "Visualizacao",
+                ["Resumo semanal (todos)", "Grade completa"],
+                horizontal=True,
+                key="modo_grade_horaria_v2",
+            )
+
+            if modo == "Resumo semanal (todos)":
+                st.markdown("### Resumo de aulas por professor")
+                linhas = []
+                for prof in professores:
+                    dfp = df_g[df_g["professor"].map(_norm) == _norm(prof)]
+                    total = len(dfp)
+                    row = {"Professor": prof, "Total semana": total}
+                    for dia in dias_ord:
+                        n = int((dfp["dia_semana"].astype(str).str.lower() == dia.lower()).sum())
+                        row[dia] = n
+                        row[f"Vago {dia}"] = 7 - n
+                    linhas.append(row)
+                df_res = pd.DataFrame(linhas).sort_values("Total semana", ascending=False)
+                st.dataframe(df_res, use_container_width=True, hide_index=True)
+                st.caption("Para montar almoco e Hora de Estudos, use a aba dedicada.")
+            else:
+                dia_filtro = st.selectbox(
+                    "Dia",
+                    ["Todos"] + dias_ord,
+                    key="grade_completa_dia",
+                )
+                df_base = df_g.copy()
+                if dia_filtro != "Todos":
+                    df_base = df_base[
+                        df_base["dia_semana"].astype(str).str.lower() == dia_filtro.lower()
+                    ]
+
+                def _tk(t):
+                    s = str(t or "").upper().replace("º", "").replace("°", "")
+                    s = s.replace(" ", "").replace("ANO", "").replace("-", "")
+                    return s
+
+                mapa_cols = [
+                    ("6A", "6A"), ("6B", "6B"), ("7A", "7A"), ("7C", "7C"),
+                    ("8A", "8A"), ("8B", "8B"), ("8C", "8C"),
+                    ("9A", "9A"), ("9B", "9B"), ("9C", "9C"),
+                    ("3ATEC", "3A-TEC"), ("3BTEC", "3B-TEC"),
+                ]
+                df_base["_tk"] = df_base["turma"].map(_tk)
+                dias_show = dias_ord if dia_filtro == "Todos" else [dia_filtro]
+                for dia in dias_show:
+                    df_dia = df_base[df_base["dia_semana"].astype(str).str.lower() == dia.lower()]
+                    if df_dia.empty:
+                        continue
+                    st.markdown(f"**{dia.upper()}**")
+                    linhas = []
+                    for aula in range(1, 8):
+                        row = {"Aula": f"{aula}ª"}
+                        df_aula = df_dia[df_dia["aula"] == aula]
+                        for key, label in mapa_cols:
+                            cel = df_aula[df_aula["_tk"] == key]
+                            if cel.empty:
+                                row[label] = ""
+                            else:
+                                r0 = cel.iloc[0]
+                                row[label] = f"{r0['disciplina']} - {r0['professor']}"
+                        linhas.append(row)
+                    st.dataframe(pd.DataFrame(linhas), use_container_width=True, hide_index=True)
+
+
+    with aba_janelas_prof:
+        st.subheader("Grade de janelas · Almoço e H.E.")
+        st.caption("Células VAGO: marque ALMOÇO ou H.E. do professor · aulas com turma ficam bloqueadas")
+
+        st.markdown("""
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin:0.75rem 0 1rem 0;">
+  <div style="padding:0.85rem 1rem;border-radius:10px;background:#eff6ff;border-left:5px solid #2563eb;">
+    <div style="font-weight:800;color:#1e3a8a;margin-bottom:0.35rem;">6º · 7º · 3º TEC</div>
+    <div style="color:#1e40af;font-size:0.92rem;line-height:1.55;">
+      <b>Café:</b> 08:40 às 09:00<br>
+      <b>Almoço:</b> 10:40 às 11:30
+    </div>
+  </div>
+  <div style="padding:0.85rem 1rem;border-radius:10px;background:#fef3c7;border-left:5px solid #d97706;">
+    <div style="font-weight:800;color:#92400e;margin-bottom:0.35rem;">8º · 9º</div>
+    <div style="color:#b45309;font-size:0.92rem;line-height:1.55;">
+      <b>Café:</b> 09:30 às 09:50<br>
+      <b>Almoço:</b> 11:30 às 12:20
+    </div>
+  </div>
+</div>
+<p style="margin:0 0 0.75rem 0;font-size:0.85rem;color:#64748b;">
+  Esses horários são dos <b>estudantes</b>. O ALMOÇO / H.E. marcados na grade abaixo são do <b>professor</b>.
+</p>
+""", unsafe_allow_html=True)
+
+
+        try:
+            df_grade_j = carregar_grade_horaria("Turno 1", 2026)
+        except Exception:
+            df_grade_j = pd.DataFrame()
+
+        def _fmt_disc_j(v):
+            return str(v or "").strip().upper()
+
+        def _fmt_prof_j(v):
+            s = str(v or "").strip()
+            if not s:
+                return s
+            partes = s.replace("_", " ").split()
+            out = []
+            for p in partes:
+                if len(p) <= 2 and p.endswith("."):
+                    out.append(p[0].upper() + ".")
+                else:
+                    out.append(p[:1].upper() + p[1:].lower())
+            return " ".join(out)
+
+        def _norm_j(v):
+            return normalizar_texto(str(v or ""))
+
+        def _carregar_janelas():
+            try:
+                df = _supabase_get_dataframe(
+                    "grade_janelas?select=id,professor,dia_semana,aula,tipo,ano_letivo&ano_letivo=eq.2026",
+                    "carregar grade janelas"
+                )
+                return df if df is not None else pd.DataFrame()
+            except Exception:
+                return pd.DataFrame()
+
+        def _salvar_janela(professor, dia, aula, tipo):
+            dados = {
+                "professor": professor,
+                "dia_semana": dia,
+                "aula": int(aula),
+                "tipo": tipo,
+                "ano_letivo": 2026,
+            }
+            # remove se vazio
+            if not tipo or tipo == "—":
+                try:
+                    _supabase_request(
+                        "DELETE",
+                        f"grade_janelas?professor=eq.{requests.utils.quote(professor)}&dia_semana=eq.{requests.utils.quote(dia)}&aula=eq.{int(aula)}&ano_letivo=eq.2026",
+                    )
+                    return True
+                except Exception:
+                    return False
+            # upsert via delete + insert simples
+            try:
+                _supabase_request(
+                    "DELETE",
+                    f"grade_janelas?professor=eq.{requests.utils.quote(professor)}&dia_semana=eq.{requests.utils.quote(dia)}&aula=eq.{int(aula)}&ano_letivo=eq.2026",
+                )
+            except Exception:
+                pass
+            try:
+                return bool(salvar_comunicado) and _supabase_request("POST", "grade_janelas", data=dados)
+            except Exception:
+                try:
+                    r = _supabase_request("POST", "grade_janelas", data=[dados] if False else dados)
+                    return True
+                except Exception as e:
+                    st.error(f"Erro ao salvar: {e}")
+                    return False
+
+        if df_grade_j is None or df_grade_j.empty:
+            st.warning("Grade de aulas ainda nao importada.")
+        else:
+            df_j = df_grade_j.copy()
+            df_j["disciplina"] = df_j["disciplina"].map(_fmt_disc_j)
+            df_j["professor"] = df_j["professor"].map(_fmt_prof_j)
+            df_j["aula"] = pd.to_numeric(df_j["aula"], errors="coerce").fillna(0).astype(int)
+
+            professores_j = sorted({p for p in df_j["professor"] if p})
+            dias_ord_j = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta"]
+
+            # ============================================================
+            # REGRAS DA JORNADA DOCENTE
+            # ============================================================
+            # 6º / 7º / 3º TEC:
+            #   Café   = 08:40–09:00
+            #   Almoço = 10:40–11:30
+            #
+            # 8º / 9º:
+            #   Café   = 09:30–09:50
+            #   Almoço = 11:30–12:20
+            #
+            # H.E.:
+            #   somente antes de 10:40
+            #
+            # ALMOÇO:
+            #   50 minutos, no máximo 1 por dia
+            #
+            # P. PRESENÇA:
+            #   50 minutos, entre 10:40 e 13:10
+            #   mínimo de 2 vezes por semana
+            # ============================================================
+
+            opcoes_cel = ["—", "ALMOÇO", "H.E.", "P. PRESENÇA"]
+
+            HORARIO_AULA = {
+                1: ("07:00", "07:50"),
+                2: ("07:50", "08:40"),
+                3: ("08:40", "09:30"),
+                4: ("09:50", "10:40"),
+                5: ("10:40", "11:30"),
+                6: ("11:30", "12:20"),
+                7: ("12:20", "13:10"),
+            }
+
+            # Horarios reais possiveis conforme o grupo
+            HORARIOS_GRUPO = {
+                "67TEC": {
+                    1: ("07:00", "07:50"),
+                    2: ("07:50", "08:40"),
+                    3: ("09:00", "09:50"),
+                    4: ("09:50", "10:40"),
+                    5: ("10:40", "11:30"),
+                    6: ("11:30", "12:20"),
+                    7: ("12:20", "13:10"),
+                },
+                "89": {
+                    1: ("07:00", "07:50"),
+                    2: ("07:50", "08:40"),
+                    3: ("08:40", "09:30"),
+                    4: ("09:50", "10:40"),
+                    5: ("10:40", "11:30"),
+                    6: ("11:30", "12:20"),
+                    7: ("12:20", "13:10"),
+                },
+            }
+
+            def _grupo_horario(turma):
+                t = str(turma or "").upper()
+                t = (
+                    t.replace("º", "")
+                     .replace("°", "")
+                     .replace(" ", "")
+                     .replace("-", "")
+                     .replace("_", "")
+                )
+
+                if (
+                    t.startswith("6A")
+                    or t.startswith("6B")
+                    or t.startswith("7A")
+                    or t.startswith("7C")
+                    or t.startswith("3A")
+                    or t.startswith("3B")
+                ):
+                    return "67TEC"
+
+                if t.startswith("8A") or t.startswith("8B") or t.startswith("8C"):
+                    return "89"
+
+                if t.startswith("9A") or t.startswith("9B") or t.startswith("9C"):
+                    return "89"
+
+                return "89"
+
+            def _minutos(hora):
+                h, m = str(hora).split(":")
+                return int(h) * 60 + int(m)
+
+            def _duracao_50(inicio, fim):
+                return (_minutos(fim) - _minutos(inicio)) == 50
+
+            def _intervalo_aula_real(turma, aula):
+                grupo = _grupo_horario(turma)
+                return HORARIOS_GRUPO[grupo].get(int(aula))
+
+            def _tem_aula_no_intervalo(df_prof_dia, inicio, fim):
+                ini = _minutos(inicio)
+                fin = _minutos(fim)
+
+                for _, rr in df_prof_dia.iterrows():
+                    aula = int(rr.get("aula", 0) or 0)
+                    turma = rr.get("turma", "")
+
+                    intervalo = _intervalo_aula_real(turma, aula)
+                    if not intervalo:
+                        continue
+
+                    a_ini = _minutos(intervalo[0])
+                    a_fim = _minutos(intervalo[1])
+
+                    if a_ini < fin and a_fim > ini:
+                        return True
+
+                return False
+
+            def _janelas_validas(df_prof_dia):
+                """
+                Retorna somente blocos reais e continuos de 50 minutos
+                onde o professor nao possui aula.
+                """
+                candidatos = [
+                    ("07:00", "07:50", "H.E."),
+                    ("07:50", "08:40", "H.E."),
+                    ("09:00", "09:50", "H.E."),
+                    ("08:40", "09:30", "H.E."),
+                    ("09:50", "10:40", "H.E."),
+                    ("10:40", "11:30", "ALMOÇO/P. PRESENÇA"),
+                    ("11:30", "12:20", "ALMOÇO/P. PRESENÇA"),
+                    ("12:20", "13:10", "ALMOÇO/P. PRESENÇA"),
+                ]
+
+                validas = []
+
+                for inicio_j, fim_j, tipo_permitido in candidatos:
+                    if not _duracao_50(inicio_j, fim_j):
+                        continue
+
+                    if _tem_aula_no_intervalo(df_prof_dia, inicio_j, fim_j):
+                        continue
+
+                    validas.append((inicio_j, fim_j, tipo_permitido))
+
+                return validas
+
+            prof_sel = st.selectbox(
+                "Professor(a)",
+                professores_j,
+                key="janela_grade_prof"
+            )
+
+            dfp = df_j[
+                df_j["professor"].map(_norm_j) == _norm_j(prof_sel)
+            ].copy()
+
+            df_jan = _carregar_janelas()
+
+            if df_jan is not None and not df_jan.empty:
+                df_jan = df_jan[
+                    df_jan["professor"].map(_norm_j) == _norm_j(prof_sel)
+                ].copy()
+            else:
+                df_jan = pd.DataFrame(
+                    columns=["dia_semana", "aula", "tipo"]
+                )
+
+            def _tipo_salvo(dia, aula):
+                if df_jan is None or df_jan.empty:
+                    return "—"
+
+                m = df_jan[
+                    (df_jan["dia_semana"].astype(str).str.lower() == dia.lower())
+                    &
+                    (
+                        pd.to_numeric(
+                            df_jan["aula"],
+                            errors="coerce"
+                        ) == aula
+                    )
+                ]
+
+                if m.empty:
+                    return "—"
+
+                return str(
+                    m.iloc[0].get("tipo", "—")
+                ).strip() or "—"
+
+            st.markdown(
+                f"**Grade de {prof_sel}** · Jornada docente"
+            )
+
+            st.caption(
+                "H.E. antes de 10:40 · ALMOÇO e P. PRESENÇA "
+                "somente em blocos contínuos de 50 minutos."
+            )
+
+            # ============================================================
+            # RESUMO SEMANAL AUTOMATICO
+            # ============================================================
+            resumo_semana = []
+
+            for dia in dias_ord_j:
+                df_dia_prof = dfp[
+                    dfp["dia_semana"].astype(str).str.lower()
+                    == dia.lower()
+                ].copy()
+
+                aulas_dia = len(df_dia_prof)
+
+                validas_dia = _janelas_validas(df_dia_prof)
+
+                he_dia = [
+                    x for x in validas_dia
+                    if x[2] == "H.E."
+                ]
+
+                tarde_dia = [
+                    x for x in validas_dia
+                    if x[2] == "ALMOÇO/P. PRESENÇA"
+                ]
+
+                resumo_semana.append({
+                    "Dia": dia,
+                    "Aulas": aulas_dia,
+                    "Vagos": max(0, 7 - aulas_dia),
+                    "Janelas H.E.": len(he_dia),
+                    "Janelas 10:40–13:10": len(tarde_dia),
+                })
+
+            st.dataframe(
+                pd.DataFrame(resumo_semana),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            # ============================================================
+            # GRADE DE LANCAMENTO
+            # ============================================================
+            st.markdown("### Distribuição da jornada")
+
+            cols_h = st.columns([1.3] + [1] * 5)
+            cols_h[0].markdown("**Horário**")
+
+            for i, dia in enumerate(dias_ord_j):
+                cols_h[i + 1].markdown(f"**{dia[:3]}**")
+
+            mudancas = []
+
+            for aula in range(1, 8):
+
+                cols = st.columns([1.3] + [1] * 5)
+
+                for i, dia in enumerate(dias_ord_j):
+
+                    df_cel = dfp[
+                        (dfp["dia_semana"].astype(str).str.lower() == dia.lower())
+                        &
+                        (dfp["aula"] == aula)
+                    ]
+
+                    with cols[i + 1]:
+
+                        if not df_cel.empty:
+
+                            r0 = df_cel.iloc[0]
+
+                            intervalo_real = _intervalo_aula_real(
+                                r0.get("turma", ""),
+                                aula
+                            )
+
+                            if intervalo_real:
+                                hora_txt = (
+                                    f"{intervalo_real[0]}–"
+                                    f"{intervalo_real[1]}"
+                                )
+                            else:
+                                hora_txt = HORARIO_AULA.get(
+                                    aula,
+                                    ("", "")
+                                )
+                                hora_txt = (
+                                    f"{hora_txt[0]}–"
+                                    f"{hora_txt[1]}"
+                                )
+
+                            st.text_input(
+                                "aula",
+                                value=(
+                                    f"{hora_txt} | "
+                                    f"{r0['disciplina']} | "
+                                    f"{r0['turma']}"
+                                ),
+                                disabled=True,
+                                key=f"fix_aula_{prof_sel}_{dia}_{aula}",
+                                label_visibility="collapsed",
+                            )
+
+                        else:
+
+                            # ------------------------------------------------
+                            # Verifica se existe janela real de 50 minutos
+                            # ------------------------------------------------
+                            df_dia_prof = dfp[
+                                dfp["dia_semana"].astype(str).str.lower()
+                                == dia.lower()
+                            ].copy()
+
+                            validas = _janelas_validas(df_dia_prof)
+
+                            opcoes_validas = ["—"]
+
+                            for ini_v, fim_v, tipo_v in validas:
+
+                                if tipo_v == "H.E.":
+                                    opcoes_validas.append(
+                                        f"H.E. · {ini_v}–{fim_v}"
+                                    )
+
+                                elif tipo_v == "ALMOÇO/P. PRESENÇA":
+                                    opcoes_validas.append(
+                                        f"ALMOÇO · {ini_v}–{fim_v}"
+                                    )
+                                    opcoes_validas.append(
+                                        f"P. PRESENÇA · {ini_v}–{fim_v}"
+                                    )
+
+                            atual = _tipo_salvo(dia, aula)
+
+                            # Compatibilidade com registros antigos
+                            if atual == "ALMOÇO":
+                                atual_exibicao = "ALMOÇO"
+                            elif atual == "H.E.":
+                                atual_exibicao = "H.E."
+                            elif atual == "P. PRESENÇA":
+                                atual_exibicao = "P. PRESENÇA"
+                            else:
+                                atual_exibicao = "—"
+
+                            # ------------------------------------------------
+                            # Determina quais opções pertencem a este bloco
+                            # ------------------------------------------------
+                            opcoes_cel_local = ["—"]
+
+                            for ini_v, fim_v, tipo_v in validas:
+
+                                if (
+                                    aula <= 4
+                                    and tipo_v == "H.E."
+                                ):
+                                    opcoes_cel_local.append(
+                                        f"H.E. · {ini_v}–{fim_v}"
+                                    )
+
+                                if (
+                                    aula >= 5
+                                    and tipo_v == "ALMOÇO/P. PRESENÇA"
+                                ):
+                                    opcoes_cel_local.append(
+                                        f"ALMOÇO · {ini_v}–{fim_v}"
+                                    )
+                                    opcoes_cel_local.append(
+                                        f"P. PRESENÇA · {ini_v}–{fim_v}"
+                                    )
+
+                            # ------------------------------------------------
+                            # Se já existe registro antigo, mostra compatibilidade
+                            # ------------------------------------------------
+                            if atual_exibicao != "—":
+                                encontrados = [
+                                    x for x in opcoes_cel_local
+                                    if x.startswith(atual_exibicao)
+                                ]
+
+                                if encontrados:
+                                    valor_inicial = encontrados[0]
+                                else:
+                                    valor_inicial = "—"
+                            else:
+                                valor_inicial = "—"
+
+                            idx = (
+                                opcoes_cel_local.index(valor_inicial)
+                                if valor_inicial in opcoes_cel_local
+                                else 0
+                            )
+
+                            novo_val = st.selectbox(
+                                "janela",
+                                opcoes_cel_local,
+                                index=idx,
+                                key=f"fix_janela_{prof_sel}_{dia}_{aula}",
+                                label_visibility="collapsed",
+                            )
+
+                            # Guarda somente o tipo para o banco
+                            if novo_val.startswith("H.E."):
+                                tipo_salvar = "H.E."
+                            elif novo_val.startswith("ALMOÇO"):
+                                tipo_salvar = "ALMOÇO"
+                            elif novo_val.startswith("P. PRESENÇA"):
+                                tipo_salvar = "P. PRESENÇA"
+                            else:
+                                tipo_salvar = "—"
+
+                            mudancas.append(
+                                (dia, aula, tipo_salvar)
+                            )
+
+                # ------------------------------------------------------------
+                # Indicacao dos intervalos dos estudantes
+                # ------------------------------------------------------------
+                if aula == 2:
+                    st.info(
+                        "☕ Café 6º/7º/3º TEC: 08:40–09:00"
+                    )
+
+                if aula == 3:
+                    st.info(
+                        "☕ Café 8º/9º: 09:30–09:50"
+                    )
+
+                if aula == 4:
+                    st.info(
+                        "🍽️ Almoço 6º/7º/3º TEC: 10:40–11:30"
+                    )
+
+                if aula == 5:
+                    st.info(
+                        "🍽️ Almoço 8º/9º: 11:30–12:20"
+                    )
+
+            # ============================================================
+            # VALIDACAO ANTES DE SALVAR
+            # ============================================================
+            erros_validacao = []
+
+            for dia in dias_ord_j:
+
+                escolhas_dia = [
+                    (d, a, t)
+                    for d, a, t in mudancas
+                    if d == dia
+                ]
+
+                qtd_almoco = sum(
+                    1
+                    for _, _, t in escolhas_dia
+                    if t == "ALMOÇO"
+                )
+
+                if qtd_almoco > 1:
+                    erros_validacao.append(
+                        f"{dia}: existe mais de 1 ALMOÇO."
+                    )
+
+                for d, a, t in escolhas_dia:
+
+                    if t == "H.E." and a > 4:
+                        erros_validacao.append(
+                            f"{dia}: H.E. só pode ocorrer antes de 10:40."
+                        )
+
+                    if t in ("ALMOÇO", "P. PRESENÇA") and a < 5:
+                        erros_validacao.append(
+                            f"{dia}: {t} só pode ocorrer entre 10:40 e 13:10."
+                        )
+
+            # ============================================================
+            # CONTADOR SEMANAL DE PEDAGOGIA
+            # ============================================================
+            qtd_presenca = sum(
+                1
+                for _, _, t in mudancas
+                if t == "P. PRESENÇA"
+            )
+
+            st.markdown("---")
+
+            c1, c2, c3, c4 = st.columns(4)
+
+            c1.metric(
+                "Aulas na semana",
+                len(dfp)
+            )
+
+            c2.metric(
+                "ALMOÇO",
+                sum(
+                    1 for _, _, t in mudancas
+                    if t == "ALMOÇO"
+                )
+            )
+
+            c3.metric(
+                "H.E.",
+                sum(
+                    1 for _, _, t in mudancas
+                    if t == "H.E."
+                )
+            )
+
+            c4.metric(
+                "P. PRESENÇA",
+                qtd_presenca
+            )
+
+            if qtd_presenca < 2:
+                st.warning(
+                    "⚠️ Este professor ainda possui menos de "
+                    "2 períodos de P. PRESENÇA na semana."
+                )
+
+            # ============================================================
+            # SALVAR
+            # ============================================================
+            if st.button(
+                "💾 Salvar distribuição da jornada",
+                type="primary",
+                key="btn_salvar_janelas_grade"
+            ):
+
+                if ACCESS_CONTEXT.role not in {"manager", "local"}:
+                    st.error("Somente a gestão pode salvar alterações na grade.")
+
+                elif erros_validacao:
+
+                    for erro in erros_validacao:
+                        st.error(erro)
+
+                else:
+
+                    ok = 0
+                    falha = 0
+
+                    for dia, aula, tipo in mudancas:
+
+                        try:
+                            with engine.begin() as conn:
+                                conn.execute(
+                                    text(
+                                        """
+                                        DELETE FROM grade_janelas
+                                        WHERE professor=:professor
+                                          AND dia_semana=:dia_semana
+                                          AND aula=:aula
+                                          AND ano_letivo=2026
+                                        """
+                                    ),
+                                    {"professor": prof_sel, "dia_semana": dia, "aula": int(aula)},
+                                )
+
+                                if tipo and tipo != "—":
+                                    conn.execute(
+                                        text(
+                                            """
+                                            INSERT INTO grade_janelas
+                                                (professor, dia_semana, aula, tipo, ano_letivo)
+                                            VALUES (:professor, :dia_semana, :aula, :tipo, 2026)
+                                            """
+                                        ),
+                                        {
+                                            "professor": prof_sel,
+                                            "dia_semana": dia,
+                                            "aula": int(aula),
+                                            "tipo": tipo,
+                                        },
+                                    )
+
+                            ok += 1
+
+                        except Exception:
+                            falha += 1
+
+                    if ok:
+                        st.success(
+                            f"Salvo ({ok} célula(s))."
+                        )
+                        st.rerun()
+
+                    if falha:
+                        st.error(
+                            f"{falha} falha(s) ao salvar."
+                        )
+            # legenda
+            st.markdown("---")
+            c1, c2, c3 = st.columns(3)
+            total_aulas = len(dfp)
+            n_almoco = sum(1 for d, a, t in mudancas if t == "ALMOÇO")
+            n_he = sum(1 for d, a, t in mudancas if t == "H.E.")
+            c1.metric("Aulas na semana", total_aulas)
+            c2.metric("ALMOÇO marcados", n_almoco)
+            c3.metric("H.E. marcados", n_he)
+
+
+            st.markdown("---")
+            st.markdown("### Impressao")
+            st.caption("Gera pagina para imprimir ou salvar em PDF pelo navegador (Ctrl+P).")
+
+            def _html_impressao_professor(prof, df_aulas, df_janelas_prof, dias_ord):
+                # monta tabela 7 x 5
+                def cel(dia, aula):
+                    df_cel = df_aulas[
+                        (df_aulas["dia_semana"].astype(str).str.lower() == dia.lower())
+                        & (df_aulas["aula"] == aula)
+                    ]
+                    if not df_cel.empty:
+                        r0 = df_cel.iloc[0]
+                        return f"{r0['disciplina']}<br><small>{r0['turma']}</small>"
+                    if df_janelas_prof is not None and not df_janelas_prof.empty:
+                        m = df_janelas_prof[
+                            (df_janelas_prof["dia_semana"].astype(str).str.lower() == dia.lower())
+                            & (pd.to_numeric(df_janelas_prof["aula"], errors="coerce") == aula)
+                        ]
+                        if not m.empty:
+                            return f"<b>{m.iloc[0].get('tipo','')}</b>"
+                    return "—"
+
+                rows = ""
+                for aula in range(1, 8):
+                    rows += f"<tr><th>{aula}ª</th>"
+                    for dia in dias_ord:
+                        rows += f"<td>{cel(dia, aula)}</td>"
+                    rows += "</tr>"
+
+                return f"""
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Grade - {prof}</title>
+<style>
+body{{font-family:Arial,sans-serif;padding:16px;color:#111}}
+h1{{font-size:18px;margin:0 0 8px 0}}
+h2{{font-size:14px;margin:16px 0 6px 0;color:#333}}
+table{{border-collapse:collapse;width:100%;font-size:11px}}
+th,td{{border:1px solid #333;padding:6px;text-align:center;vertical-align:middle}}
+th{{background:#e5e7eb}}
+.legenda{{font-size:12px;margin-top:12px;line-height:1.5}}
+.box{{display:inline-block;padding:8px 12px;border:1px solid #94a3b8;border-radius:6px;margin:4px 8px 4px 0}}
+@media print{{button{{display:none}}}}
+</style></head><body>
+<h1>Grade do professor: {prof} · Turno 1</h1>
+<p>Pedagogia da Presença só em janela livre de 1 aula (50 min). ALMOÇO e H.E. também só em VAGO.</p>
+<table>
+<thead><tr><th>Aula</th><th>Seg</th><th>Ter</th><th>Qua</th><th>Qui</th><th>Sex</th></tr></thead>
+<tbody>{rows}</tbody>
+</table>
+<h2>Intervalos dos estudantes</h2>
+<div class="legenda">
+  <div class="box"><b>6º · 7º · 3º TEC</b><br>Café 08:40–09:00<br>Almoço 10:40–11:30</div>
+  <div class="box"><b>8º · 9º</b><br>Café 09:30–09:50<br>Almoço 11:30–12:20</div>
+</div>
+<p class="legenda">Gerado pelo Sistema Conviva 179</p>
+</body></html>
+"""
+
+            col_p1, col_p2 = st.columns(2)
+            with col_p1:
+                if st.button("🖨️ Imprimir grade deste professor", key="btn_imprimir_grade_janelas", use_container_width=True):
+                    html = _html_impressao_professor(prof_sel, dfp, df_jan if 'df_jan' in dir() else pd.DataFrame(), dias_ord_j)
+                    st.download_button(
+                        "📥 Baixar HTML para impressão",
+                        data=html.encode("utf-8"),
+                        file_name=f"grade_{str(prof_sel).replace(' ','_')}.html",
+                        mime="text/html",
+                        key="dl_html_grade_prof",
+                    )
+                    st.components.v1.html(html, height=520, scrolling=True)
+                    st.info("Use Ctrl+P na área acima ou abra o HTML baixado para imprimir/PDF.")
+            with col_p2:
+                if st.button("🖨️ Imprimir resumo de VAGO (todos)", key="btn_imprimir_resumo_vago", use_container_width=True):
+                    linhas_html = []
+                    for prof in professores_j:
+                        dfp2 = df_j[df_j["professor"].map(_norm_j) == _norm_j(prof)]
+                        total = len(dfp2)
+                        cells = "".join(
+                            f"<td>{7 - int((dfp2['dia_semana'].astype(str).str.lower()==d.lower()).sum())}</td>"
+                            for d in dias_ord_j
+                        )
+                        linhas_html.append(f"<tr><td>{prof}</td><td>{total}</td>{cells}</tr>")
+                    html_r = f"""
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumo VAGO</title>
+<style>body{{font-family:Arial;padding:16px}}table{{border-collapse:collapse;width:100%;font-size:12px}}
+th,td{{border:1px solid #333;padding:5px;text-align:center}}th{{background:#e5e7eb}}</style></head>
+<body><h1>Resumo de janelas VAGO · Turno 1</h1>
+<table><thead><tr><th>Professor</th><th>Aulas</th><th>Vago Seg</th><th>Vago Ter</th><th>Vago Qua</th><th>Vago Qui</th><th>Vago Sex</th></tr></thead>
+<tbody>{''.join(linhas_html)}</tbody></table>
+<p>6º/7º/3º TEC — Café 08:40–09:00 · Almoço 10:40–11:30<br>
+8º/9º — Café 09:30–09:50 · Almoço 11:30–12:20</p>
+</body></html>"""
+                    st.download_button(
+                        "📥 Baixar resumo HTML",
+                        data=html_r.encode("utf-8"),
+                        file_name="resumo_vago_professores.html",
+                        mime="text/html",
+                        key="dl_html_resumo_vago",
+                    )
+                    st.components.v1.html(html_r, height=420, scrolling=True)
+
+
+    with aba_cad_prof:
+        st.caption("Cadastro e lista de professores")
+    with aba_cad_prof:
+        st.caption("Cadastro e lista de professores")
+    with aba_cad_prof:
+        st.caption("Cadastro e lista de professores")
+    # ======================================================
 # PÁGINA 👤 CADASTRAR ASSINATURAS (COMPLETA)
 # ======================================================
 
@@ -21427,7 +24309,10 @@ elif menu == "🏫 Mapa da Sala":
 # ======================================================
 
 elif menu == "💾 Backups":
-    render_backup_page()
+    if ACCESS_CONTEXT.role in {"manager", "local"}:
+        render_backup_page()
+    else:
+        st.error("Acesso aos backups exclusivo para contas de gestão autorizadas.")
     # ======================================================
 # PÁGINA 📅 AGENDAMENTO DE ESPAÇOS (VERSÃO PREMIUM COMPLETA)
 # ======================================================
@@ -21584,7 +24469,7 @@ elif menu == "📅 Agendamento de Espaços":
             horizontal=True,
             key="tipo_agendamento"
         )
-        
+
         if tipo_agendamento == "📅 Data específica":
             with st.form("form_agendamento_data"):
                 col1, col2 = st.columns(2)
@@ -22265,33 +25150,28 @@ elif menu == "📅 Agendamento de Espaços":
                                 "Professor": row['professor_nome'],
                                 "Disciplina": row['disciplina']
                             })
-                        
                         df_tabela = pd.DataFrame(tabela_dia)
                         st.dataframe(df_tabela, use_container_width=True, hide_index=True)
-                
+
                 st.markdown("---")
                 st.subheader("📋 Tabela Completa para Impressão")
-                
+
                 colunas_exibir = ['data_agendamento', 'horario', 'turma', 'professor_nome', 'disciplina']
                 colunas_disponiveis = [c for c in colunas_exibir if c in df.columns]
-                
                 df_completo = df[colunas_disponiveis].copy()
                 if 'data_agendamento' in df_completo.columns:
                     df_completo['data_agendamento'] = df_completo['data_agendamento'].dt.strftime('%d/%m/%Y')
-                
                 st.dataframe(df_completo, use_container_width=True, hide_index=True)
-                
+
                 try:
                     buffer = BytesIO()
                     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), leftMargin=1*cm, rightMargin=1*cm, topMargin=1*cm, bottomMargin=1*cm)
                     estilos = getSampleStyleSheet()
-                    
                     elementos = []
                     elementos.append(Paragraph(f"AGENDA - {espaco_sel.upper()}", estilos['Heading1']))
                     elementos.append(Spacer(1, 0.2*cm))
                     elementos.append(Paragraph(f"Período: {data_ini.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} | Total: {len(df)} agendamentos", estilos['Normal']))
                     elementos.append(Spacer(1, 0.3*cm))
-                    
                     dados_tabela = [["Data", "Horário", "Turma", "Professor", "Disciplina"]]
                     for _, row in df.iterrows():
                         data_val = row.get('data_agendamento')
@@ -22304,7 +25184,6 @@ elif menu == "📅 Agendamento de Espaços":
                             str(row.get('professor_nome', '')),
                             str(row.get('disciplina', ''))
                         ])
-                    
                     tabela = Table(dados_tabela, repeatRows=1)
                     tabela.setStyle(TableStyle([
                         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#4A90E2")),
@@ -22473,17 +25352,15 @@ elif menu == "📅 Agendamento de Espaços":
     # ======================================================
     with tabs_agend[7]:
         st.subheader("⚙️ Gestão de Agendamentos")
-        
-        if not st.session_state.gestao_logado:
-            senha = st.text_input("Senha da Gestão:", type="password")
+
+        if ACCESS_CONTEXT.role not in {"manager", "local"}:
+            st.info("Acesso exclusivo para contas de gestão autorizadas.")
+        elif not st.session_state.gestao_logado:
             if st.button("🔓 Acessar", type="primary"):
-                if senha == SENHA_GESTAO_AGEND:
-                    st.session_state.gestao_logado = True
-                    st.success("✅ Acesso autorizado!")
-                    show_toast_agend("Acesso autorizado!", "success")
-                    st.rerun()
-                else:
-                    st.error("❌ Senha inválida")
+                st.session_state.gestao_logado = True
+                st.success("✅ Acesso autorizado!")
+                show_toast_agend("Acesso autorizado!", "success")
+                st.rerun()
         else:
             if st.button("🚪 Sair da Gestão", type="secondary"):
                 st.session_state.gestao_logado = False
@@ -22589,6 +25466,11 @@ else:
     if st.button("Voltar para o Dashboard", type="primary", key="voltar_dashboard_fallback"):
         st.session_state.pagina_atual = "🏠 Dashboard"
         st.rerun()
+
+
+
+
+
 
 
 

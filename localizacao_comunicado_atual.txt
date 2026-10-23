@@ -1,0 +1,1070 @@
+﻿
+  app.py:2433:# Lista de itens do menu com ícones
+  app.py:2434:menu_items = [
+  app.py:2435:    {"nome": "Dashboard", "icone": "🏠"},
+  app.py:2436:    {"nome": "Registrar Ocorrência", "icone": "📝"},
+  app.py:2437:    {"nome": "Relatório dos Estudantes", "icone": "🧾"},
+  app.py:2438:    {"nome": "Conselho", "icone": "🏛️"},
+  app.py:2439:    {"nome": "Prova Paulista", "icone": "🏆"},
+  app.py:2440:    {"nome": "Histórico de Ocorrências", "icone": "📋"},
+> app.py:2441:    {"nome": "Comunicado aos Pais", "icone": "📄"},
+  app.py:2442:    {"nome": "Alunos e Turmas", "icone": "👥"},
+  app.py:2443:    {"nome": "Cadastrar Professores", "icone": "👨‍🏫"},
+  app.py:2444:    {"nome": "Cadastrar Assinaturas", "icone": "👤"},
+  app.py:2445:    {"nome": "Eletiva", "icone": "🎨"},
+  app.py:2446:    {"nome": "Tutoria", "icone": "🫂"},
+  app.py:2447:    {"nome": "Lista Provisória de Tutoria", "icone": "🧾"},
+  app.py:2448:    {"nome": "Gráficos e Indicadores", "icone": "📊"},
+  app.py:2449:    {"nome": "Imprimir PDF", "icone": "🖨️"},
+  app.py:2450:    {"nome": "Mapão", "icone": "🗺️"},
+  app.py:2451:    {"nome": "Mapa da Sala", "icone": "🏫"},
+  app.py:2452:    {"nome": "Agendamento de Espaços", "icone": "📅"},
+  app.py:2453:    {"nome": "Portal do Responsável", "icone": "👨‍👩‍👧"},
+  app.py:2454:    {"nome": "Backups", "icone": "💾"},
+  app.py:2455:]
+  app.py:2456:
+  app.py:2457:# Criar botões estilizados
+  app.py:2458:for item in menu_items:
+  app.py:2459:    nome_completo = f"{item['icone']} {item['nome']}"
+  app.py:2460:    is_active = st.session_state.pagina_atual == nome_completo
+  app.py:2461:    button_style = "primary" if is_active else "secondary"
+  app.py:4035:    return resultados
+  app.py:4036:
+  app.py:4037:# ======================================================
+  app.py:4038:# ======================================================
+  app.py:4039:# IA CONVIVA PEDAGÓGICA ONLINE — CONFIGURAÇÃO
+  app.py:4040:# ======================================================
+  app.py:4041:
+  app.py:4042:PROMPT_IA_CONVIVA_PEDAGOGICA = """
+> app.py:4043:Você é a IA Conviva Pedagógica, especialista na rede pública estadual de São Paulo (SEDUC-SP), com 
+atuação voltada à produção de registros institucionais de alta qualidade para prontuários escolares, Plataforma 
+Conviva, comunicados às famílias, pareceres pedagógicos e encaminhamentos escolares.
+  app.py:4044:
+  app.py:4045:Sua função é transformar relatos brutos em documentos pedagógicos formais, claros, objetivos, 
+humanizados, personalizados e institucionalmente adequados, preservando a cena real do ocorrido e evitando linguagem 
+genérica ou artificial.
+  app.py:4046:
+  app.py:4047:VOZ INSTITUCIONAL - REGRA CENTRAL:
+  app.py:4048:- Escreva sempre na voz da escola.
+  app.py:4049:- Utilize 3ª pessoa neutra ou 1ª pessoa do plural institucional.
+  app.py:4050:- Nunca escreva como se estivesse dando dicas ao professor.
+  app.py:4051:- Nunca use tom de desabafo, julgamento ou acusação.
+  app.py:4052:- Preserve a dignidade de todos os envolvidos.
+  app.py:4053:- Mantenha clareza sobre os fatos, sem suavizar indevidamente situações graves.
+  app.py:4054:- O texto deve parecer escrito por educador/coordenador que conhece ou acompanhou a situação.
+  app.py:4055:- A escrita deve ser formal, simples, direta e compreensível para a família.
+  app.py:4056:
+  app.py:4057:BASES PEDAGÓGICAS E INSTITUCIONAIS:
+  app.py:4058:ECA, LDB, Currículo Paulista, Diretrizes da SEDUC-SP, Plataforma Conviva Educação, Protocolo 179 e 
+Placon quando pertinente, Educação Inclusiva, Comunicação Não Violenta, Justiça Restaurativa, Cultura de Paz, 
+desenvolvimento integral do estudante e corresponsabilidade entre escola, estudante e família.
+  app.py:4059:
+  app.py:4060:LIMITES INEGOCIÁVEIS:
+  app.py:4061:- Não invente fatos não informados.
+  app.py:4062:- Não crie falas que não foram relatadas.
+  app.py:4063:- Não acrescente diagnósticos clínicos.
+  app.py:4109:INSTRUCOES_TAREFAS_IA_RELATORIO = {
+  app.py:4110:    "Corrigir ortografia e gramática": (
+  app.py:4111:        "Faça a revisão ortográfica e gramatical. Mantenha o sentido original, mas garanta que o tom 
+esteja formal "
+  app.py:4112:        "e adequado para leitura por parte da gestão escolar ou da família do estudante."
+  app.py:4113:    ),
+  app.py:4114:    "Melhorar escrita pedagógica (Relatório/Família)": (
+  app.py:4115:        "Reescreva o texto em linguagem pedagógica simples, acolhedora e objetiva, sem ficar técnico 
+demais. "
+  app.py:4116:        "Assuma a voz da escola relatando o caso para a família ou prontuário. Diga apenas o que 
+realmente precisa "
+> app.py:4117:        "ser comunicado. Se houver ações necessárias, descreva-as como acompanhamento da escola ou 
+convite à parceria "
+  app.py:4118:        "da família. Não dê instruções diretas ao professor."
+  app.py:4119:    ),
+  app.py:4120:    "Transformar em registro de ocorrência (Placon)": (
+  app.py:4121:        "Transforme os fatos em um registro oficial, neutro e descritivo. "
+  app.py:4122:        "Foque apenas no que aconteceu, quem estava envolvido e as medidas tomadas no momento, "
+  app.py:4123:        "sem emitir juízo de valor."
+  app.py:4124:    ),
+  app.py:4125:    "Transformar em parecer descritivo de aprendizagem": (
+  app.py:4126:        "Elabore um parecer descritivo de aprendizagem. Escreva na voz da escola, com linguagem natural 
+e objetiva, "
+  app.py:4127:        "mencionando potencialidades, pontos que precisam de acompanhamento e como a escola vem 
+acompanhando."
+  app.py:4128:    ),
+> app.py:4129:    "Sugerir comunicados ou encaminhamentos para a Família": (
+> app.py:4130:        "Transforme o relato em um texto direcionado aos responsáveis, como comunicado ou 
+encaminhamento. "
+  app.py:4131:        "Use tom empático, de convite ao diálogo e parceria. Destaque o que a escola tem feito e o que "
+  app.py:4132:        "se espera do apoio familiar em casa."
+  app.py:4133:    ),
+  app.py:4134:    "Gerar escrita corrida do relatório": (
+  app.py:4135:        "Organize as informações em texto corrido de relatório escolar. Escreva na voz da escola, sem 
+orientar o professor, "
+  app.py:4136:        "descrevendo o acompanhamento realizado, as observações pedagógicas e a parceria esperada com a 
+família quando pertinente."
+  app.py:4137:    ),
+  app.py:4138:}
+  app.py:4139:
+  app.py:4140:TERMOS_OFENSIVOS_RELATORIO = [
+  app.py:4141:    "idiota", "burro", "burra", "imbecil", "retardado", "louco", "louca", "doido", "surto",
+  app.py:4142:    "preguiçoso", "preguiçosa", "relaxado", "relaxada", "desleixado", "desleixada",
+  app.py:4143:    "insuportável", "insuportavel", "problema", "problemático", "problemática",
+  app.py:4144:    "mau aluno", "má aluna", "mau caráter", "malcriado", "malcriada", "rebelde",
+  app.py:4145:    "agressivo", "agressiva", "violento", "violenta", "indisciplinado", "indisciplinada",
+  app.py:4146:    "briguento", "briguenta", "briga muito", "vive brigando", "arruma briga",
+  app.py:4147:    "barulhento", "barulhenta", "fala demais", "conversa demais", "conversa excessiva",
+  app.py:4148:    "excesso de fala", "falas excessivas", "desrespeitoso", "desrespeitosa",
+  app.py:4149:    "baderneiro", "baderneira", "fofoqueiro", "mentiroso", "mentirosa", "manipulador",
+  app.py:4150:    "não quer nada com nada", "não faz nada", "só atrapalha", "não tem jeito",
+  app.py:4183:        for nome_campo, chave in campos.items()
+  app.py:4184:    }
+  app.py:4185:
+  app.py:4186:
+  app.py:4187:def _escolher_tarefa_ia_automatica(campo_escolhido: str, texto_base: str = "") -> str:
+  app.py:4188:    """Escolhe uma tarefa padrão coerente com o campo selecionado."""
+  app.py:4189:    campo = str(campo_escolhido or "").lower()
+  app.py:4190:    if "encaminhamento" in campo or "estratég" in campo or "estrateg" in campo:
+> app.py:4191:        return "Sugerir comunicados ou encaminhamentos para a Família"
+  app.py:4192:    if "escrita corrida" in campo:
+  app.py:4193:        return "Gerar escrita corrida do relatório"
+  app.py:4194:    if "ponto grave" in campo or "grave" in campo:
+  app.py:4195:        return "Transformar em registro de ocorrência (Placon)"
+  app.py:4196:    return "Melhorar escrita pedagógica (Relatório/Família)"
+  app.py:4197:
+  app.py:4198:
+  app.py:4199:def montar_escrita_corrida_relatorio(contexto_relatorio: dict, textos_campos: dict) -> str:
+  app.py:4200:    """Monta um texto-base com os dados do relatório para a IA transformar em escrita corrida."""
+  app.py:4201:    contexto_relatorio = contexto_relatorio or {}
+  app.py:4202:    aluno = str(contexto_relatorio.get("aluno", "") or "").strip() or "Estudante não informado"
+  app.py:4203:    turma = str(contexto_relatorio.get("turma", "") or "").strip() or "Turma não informada"
+  app.py:4204:    situacao = str(contexto_relatorio.get("situacao_geral", "") or "").strip()
+  app.py:4205:    frequencia = str(contexto_relatorio.get("frequencia", "") or "").strip()
+  app.py:4206:
+  app.py:4207:    partes = [f"Estudante: {aluno}", f"Turma: {turma}"]
+  app.py:4208:    if situacao:
+  app.py:4209:        partes.append(f"Situação geral: {situacao}")
+  app.py:4210:    if frequencia:
+  app.py:4211:        partes.append(f"Frequência: {frequencia}")
+  app.py:4713:# ======================================================
+  app.py:4714:
+  app.py:4715:def assistente_virtual(pergunta: str) -> str:
+  app.py:4716:    """Responde perguntas frequentes sobre o sistema"""
+  app.py:4717:    respostas = {
+  app.py:4718:        "como registrar ocorrência": "Vá em '📝 Registrar Ocorrência', selecione a turma, o aluno e use 
+a busca inteligente para encontrar a infração.",
+  app.py:4719:        "como importar alunos": "Use '👥 Alunos e Turmas > 📥 Importar alunos', selecione o arquivo CSV 
+da SEDUC, escolha a turma e clique em Importar.",
+  app.py:4720:        "como agendar espaço": "Em '📅 Agendamento de Espaços', use '✨ Agendar' para data específica ou 
+'🗓️ Grade Semanal' para horários fixos.",
+> app.py:4721:        "como criar comunicado": "Em '📄 Comunicado aos Pais', selecione o aluno e a ocorrência, marque 
+as medidas e gere o PDF.",
+  app.py:4722:        "como ver gráficos": "Acesse '📊 Gráficos e Indicadores' para análises visuais das ocorrências.",
+  app.py:4723:        "como cadastrar professor": "Em '👨‍🏫 Cadastrar Professores', preencha nome e cargo, ou importe 
+uma lista em massa.",
+  app.py:4724:        "como fazer backup": "Vá em '💾 Backups' para gerar ou importar backups do sistema.",
+  app.py:4725:        "mapa da sala": "Em '🏫 Mapa da Sala', configure fileiras e carteiras, depois distribua os 
+alunos.",
+  app.py:4726:        "portal do responsável": "Acesse '👨‍👩‍👧 Portal do Responsável' e faça login com o RA do 
+aluno.",
+  app.py:4727:    }
+  app.py:4728:    pergunta_lower = pergunta.lower()
+  app.py:4729:    for chave, resposta in respostas.items():
+  app.py:4730:        if chave in pergunta_lower:
+  app.py:4731:            return resposta
+> app.py:4732:    return "Desculpe, não entendi. Tente perguntar sobre: registrar ocorrência, importar alunos, agendar 
+espaço, criar comunicado, ver gráficos, cadastrar professor, fazer backup, mapa da sala ou portal do responsável."
+  app.py:4733:
+  app.py:4734:def exibir_assistente_sidebar():
+  app.py:4735:    """Exibe o assistente virtual no sidebar"""
+  app.py:4736:    with st.sidebar.expander("🤖 Assistente Virtual", expanded=False):
+  app.py:4737:        st.markdown("<div style='color:#94a3b8;font-size:0.8rem;margin-bottom:0.5rem;'>Como posso 
+ajudar?</div>", unsafe_allow_html=True)
+  app.py:4738:        pergunta = st.text_input("", placeholder="Ex: Como registrar ocorrência?", 
+key="assistente_input", label_visibility="collapsed")
+  app.py:4739:        if pergunta:
+  app.py:4740:            resposta = assistente_virtual(pergunta)
+  app.py:4741:            st.markdown(f"<div style='background:rgba(37,99,235,0.1);border-left:3px solid 
+#2563eb;border-radius:8px;padding:0.6rem 0.8rem;font-size:0.8rem;color:#93c5fd;margin:0.4rem 0;'>{resposta}</div>", 
+unsafe_allow_html=True)
+  app.py:4742:        st.markdown("<div style='height:1px;background:rgba(255,255,255,0.06);margin:0.6rem 0;'></div>", 
+unsafe_allow_html=True)
+  app.py:4743:        st.markdown("<div style='font-size:0.72rem;color:#475569;line-height:1.8;'>💡 Busca inteligente 
+nas ocorrências<br>📅 Agendamentos fixos na Grade Semanal<br>📥 Exporte relatórios em PDF ou Excel</div>", 
+unsafe_allow_html=True)
+  app.py:4744:
+  app.py:4745:# ======================================================
+  app.py:4746:# CONEXÃO POSTGRESQL (NEON / AMBIENTE / LOCAL)
+  app.py:4747:# ======================================================
+  app.py:4748:import os
+  app.py:4749:import psycopg2
+  app.py:4750:from psycopg2.extras import execute_values
+  app.py:4751:from sqlalchemy import create_engine
+  app.py:4752:
+  app.py:8201:    elementos.append(Spacer(1, 0.2*cm))
+  app.py:8202:    elementos.append(Paragraph("<b>ENCAMINHAMENTOS</b>", estilos["Normal"]))
+  app.py:8203:    elementos.append(Paragraph(str(ocorrencia.get("encaminhamento", "")).replace("\n", "<br/>"), 
+estilos["Normal"]))
+  app.py:8204:    doc.build(elementos)
+  app.py:8205:    buffer.seek(0)
+  app.py:8206:    return buffer
+  app.py:8207:
+  app.py:8208:# ======================================================
+> app.py:8209:# PDF — COMUNICADO AOS PAIS
+  app.py:8210:# ======================================================
+  app.py:8211:
+> app.py:8212:def gerar_pdf_comunicado(
+  app.py:8213:    aluno_data: dict,
+  app.py:8214:    ocorrencia_data: dict,
+  app.py:8215:    medidas_aplicadas: str = "",
+  app.py:8216:    observacoes: str = "",
+  app.py:8217:    df_responsaveis: pd.DataFrame = None,
+  app.py:8218:    modelo: str = "geral"
+  app.py:8219:) -> BytesIO:
+  app.py:8220:    """
+> app.py:8221:    Gera comunicado individual em PDF.
+  app.py:8222:
+  app.py:8223:    Modelos:
+  app.py:8224:        - atraso
+  app.py:8225:        - saida / fora da sala
+  app.py:8226:        - demais ocorrencias: modelo institucional geral
+  app.py:8227:    """
+  app.py:8228:
+  app.py:8229:    from reportlab.lib import colors
+  app.py:8230:    from reportlab.lib.pagesizes import A4
+  app.py:8231:    from reportlab.platypus import (
+  app.py:8232:        SimpleDocTemplate,
+  app.py:8233:        Table,
+  app.py:8234:        TableStyle,
+  app.py:8235:        Paragraph,
+  app.py:8236:        Spacer
+  app.py:8237:    )
+  app.py:8238:    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+  app.py:8239:    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+  app.py:8240:    from reportlab.lib.units import cm
+  app.py:8241:    from io import BytesIO
+  app.py:8328:
+  app.py:8329:    if not atrasos_semana or atrasos_semana == "0":
+  app.py:8330:        atrasos_semana = "—"
+  app.py:8331:
+  app.py:8332:    if not atrasos_mes or atrasos_mes == "0":
+  app.py:8333:        atrasos_mes = "—"
+  app.py:8334:
+  app.py:8335:    # ========================================================
+> app.py:8336:    # IDENTIFICAÇÃO DO TIPO DE COMUNICADO
+  app.py:8337:    # ========================================================
+  app.py:8338:
+  app.py:8339:    categoria_normalizada = categoria.upper()
+  app.py:8340:
+  app.py:8341:    termos_atraso = [
+  app.py:8342:        "ATRASO",
+  app.py:8343:        "ATRASADO",
+  app.py:8344:        "PONTUALIDADE",
+  app.py:8345:        "CHEGADA ATRASADA",
+  app.py:8346:        "ENTRADA ATRASADA"
+  app.py:8347:    ]
+  app.py:8348:
+  app.py:8349:    termos_saida = [
+  app.py:8350:        "FORA DA SALA",
+  app.py:8351:        "FORA DE SALA",
+  app.py:8352:        "SAIDA DA SALA",
+  app.py:8353:        "SAÍDA DA SALA",
+  app.py:8354:        "SAIR DA SALA",
+  app.py:8355:        "AUSENTE DA SALA",
+  app.py:8356:        "PERMANENCIA FORA",
+  app.py:8357:        "PERMANÊNCIA FORA",
+  app.py:8358:        "EVASAO DA SALA",
+  app.py:8359:        "EVASÃO DA SALA",
+  app.py:8360:        "CABULAR AULA"
+  app.py:8361:    ]
+  app.py:8362:
+> app.py:8363:    tipo_comunicado = limpar(modelo).lower()
+  app.py:8364:
+  app.py:8365:    if any(termo in categoria_normalizada for termo in termos_atraso):
+> app.py:8366:        tipo_comunicado = "atraso"
+  app.py:8367:
+  app.py:8368:    elif any(termo in categoria_normalizada for termo in termos_saida):
+> app.py:8369:        tipo_comunicado = "saida"
+  app.py:8370:
+  app.py:8371:    # ========================================================
+  app.py:8372:    # FONTES
+  app.py:8373:    # ========================================================
+  app.py:8374:
+  app.py:8375:    try:
+  app.py:8376:        pdfmetrics.registerFont(
+  app.py:8377:            TTFont(
+  app.py:8378:                "ArialConviva",
+  app.py:8379:                r"C:\Windows\Fonts\arial.ttf"
+  app.py:8380:            )
+  app.py:8381:        )
+  app.py:8382:
+  app.py:8383:        pdfmetrics.registerFont(
+  app.py:8384:            TTFont(
+  app.py:8385:                "ArialConviva-Bold",
+  app.py:8386:                r"C:\Windows\Fonts\arialbd.ttf"
+  app.py:8387:            )
+  app.py:8388:        )
+  app.py:8389:
+  app.py:8406:        rightMargin=36,
+  app.py:8407:        leftMargin=36,
+  app.py:8408:        topMargin=28,
+  app.py:8409:        bottomMargin=28)
+  app.py:8410:
+  app.py:8411:    estilos = getSampleStyleSheet()
+  app.py:8412:
+  app.py:8413:    estilo_titulo = ParagraphStyle(
+> app.py:8414:        "TituloComunicado",
+  app.py:8415:        parent=estilos["Title"],
+  app.py:8416:        fontName=fonte_negrito,
+  app.py:8417:        fontSize=14,
+  app.py:8418:        leading=12,
+  app.py:8419:        alignment=TA_CENTER,
+  app.py:8420:        spaceAfter=4
+  app.py:8421:    )
+  app.py:8422:
+  app.py:8423:    estilo_subtitulo = ParagraphStyle(
+> app.py:8424:        "SubtituloComunicado",
+  app.py:8425:        parent=estilos["Normal"],
+  app.py:8426:        fontName=fonte_normal,
+  app.py:8427:        fontSize=9,
+  app.py:8428:        leading=12,
+  app.py:8429:        alignment=TA_CENTER,
+  app.py:8430:        textColor=colors.grey
+  app.py:8431:    )
+  app.py:8432:
+  app.py:8433:    estilo_texto = ParagraphStyle(
+> app.py:8434:        "TextoComunicado",
+  app.py:8435:        parent=estilos["Normal"],
+  app.py:8436:        fontName=fonte_normal,
+  app.py:8437:        fontSize=10,
+  app.py:8438:        leading=12,
+  app.py:8439:        alignment=TA_LEFT,
+  app.py:8440:        spaceAfter=4
+  app.py:8441:    )
+  app.py:8442:
+  app.py:8443:    estilo_secao = ParagraphStyle(
+> app.py:8444:        "SecaoComunicado",
+  app.py:8445:        parent=estilos["Heading2"],
+  app.py:8446:        fontName=fonte_negrito,
+  app.py:8447:        fontSize=10,
+  app.py:8448:        leading=12,
+  app.py:8449:        alignment=TA_LEFT,
+  app.py:8450:        spaceBefore=3,
+  app.py:8451:        spaceAfter=4
+  app.py:8452:    )
+  app.py:8453:
+  app.py:8454:    estilo_centralizado = ParagraphStyle(
+> app.py:8455:        "CentralizadoComunicado",
+  app.py:8456:        parent=estilos["Normal"],
+  app.py:8457:        fontName=fonte_normal,
+  app.py:8458:        fontSize=8.5,
+  app.py:8459:        leading=12,
+  app.py:8460:        alignment=TA_CENTER
+  app.py:8461:    )
+  app.py:8462:
+  app.py:8463:    def adicionar_paragrafo(texto, estilo=estilo_texto):
+  app.py:8464:        elementos.append(
+  app.py:8465:            Paragraph(
+  app.py:8466:                escapar(texto),
+  app.py:8467:                estilo
+  app.py:8468:            )
+  app.py:8469:        )
+  app.py:8470:
+  app.py:8471:    def adicionar_secao(titulo):
+  app.py:8472:        elementos.append(
+  app.py:8473:            Paragraph(
+  app.py:8474:                escapar(titulo),
+  app.py:8475:                estilo_secao
+  app.py:8484:        _adicionar_logo(elementos)
+  app.py:8485:    except Exception:
+  app.py:8486:        pass
+  app.py:8487:
+  app.py:8488:    # ========================================================
+  app.py:8489:    # CABEÇALHO
+  app.py:8490:    # ========================================================
+  app.py:8491:
+> app.py:8492:    if tipo_comunicado == "atraso":
+  app.py:8493:
+  app.py:8494:        titulo = (
+> app.py:8495:            "COMUNICADO À FAMÍLIA: "
+  app.py:8496:            "PONTUALIDADE E ROTINA ESCOLAR"
+  app.py:8497:        )
+  app.py:8498:
+  app.py:8499:        subtitulo = ""
+  app.py:8500:
+> app.py:8501:    elif tipo_comunicado == "saida":
+  app.py:8502:
+  app.py:8503:        titulo = (
+> app.py:8504:            "COMUNICADO À FAMÍLIA: "
+  app.py:8505:            "PERMANÊNCIA EM SALA DE AULA "
+  app.py:8506:            "E CUMPRIMENTO DO DIREITO À EDUCAÇÃO"
+  app.py:8507:        )
+  app.py:8508:
+  app.py:8509:        subtitulo = (
+  app.py:8510:            "Orientação sobre permanência em sala durante "
+  app.py:8511:            "o horário letivo"
+  app.py:8512:        )
+  app.py:8513:
+  app.py:8514:    else:
+  app.py:8515:
+  app.py:8516:        titulos = {
+  app.py:8517:            "faltas": (
+> app.py:8518:                "COMUNICADO À FAMÍLIA: "
+  app.py:8519:                "FREQUÊNCIA E ACOMPANHAMENTO ESCOLAR"
+  app.py:8520:            ),
+  app.py:8521:            "celular": (
+> app.py:8522:                "COMUNICADO À FAMÍLIA: "
+  app.py:8523:                "USO DE DISPOSITIVOS E ROTINA PEDAGÓGICA"
+  app.py:8524:            ),
+  app.py:8525:            "convivencia": (
+> app.py:8526:                "COMUNICADO À FAMÍLIA: "
+  app.py:8527:                "CONVIVÊNCIA E RESPEITO"
+  app.py:8528:            ),
+  app.py:8529:            "bullying": (
+> app.py:8530:                "COMUNICADO À FAMÍLIA: "
+  app.py:8531:                "CONVIVÊNCIA, PROTEÇÃO E CULTURA DE PAZ"
+  app.py:8532:            ),
+  app.py:8533:            "desempenho": (
+> app.py:8534:                "COMUNICADO À FAMÍLIA: "
+  app.py:8535:                "ACOMPANHAMENTO PEDAGÓGICO"
+  app.py:8536:            ),
+> app.py:8537:            "geral": "COMUNICADO À FAMÍLIA"
+  app.py:8538:        }
+  app.py:8539:
+  app.py:8540:        titulo = titulos.get(
+> app.py:8541:            tipo_comunicado,
+> app.py:8542:            "COMUNICADO À FAMÍLIA"
+  app.py:8543:        )
+  app.py:8544:
+  app.py:8545:        subtitulo = (
+  app.py:8546:            "Registro institucional para acompanhamento "
+  app.py:8547:            "da vida escolar do estudante"
+  app.py:8548:        )
+  app.py:8549:
+  app.py:8550:    elementos.append(
+  app.py:8551:        Paragraph(
+  app.py:8552:            escapar(titulo),
+  app.py:8553:            estilo_titulo
+  app.py:8554:        )
+  app.py:8555:    )
+  app.py:8556:
+  app.py:8557:    if subtitulo:
+  app.py:8558:        elementos.append(
+  app.py:8559:            Paragraph(
+  app.py:8560:                escapar(subtitulo),
+  app.py:8561:                estilo_subtitulo
+  app.py:8562:            )
+  app.py:8565:    elementos.append(
+  app.py:8566:        Spacer(1, 0.35 * cm)
+  app.py:8567:    )
+  app.py:8568:
+  app.py:8569:    # ========================================================
+  app.py:8570:    # MODELO: ATRASO NA ENTRADA DA ESCOLA
+  app.py:8571:    # ========================================================
+  app.py:8572:
+> app.py:8573:    if tipo_comunicado == "atraso":
+  app.py:8574:
+  app.py:8575:        try:
+  app.py:8576:            total_ocorrencias_int = int(total or 0)
+  app.py:8577:            ocorrencias_anteriores = max(
+  app.py:8578:                total_ocorrencias_int - 1,
+  app.py:8579:                0
+  app.py:8580:            )
+  app.py:8581:        except Exception:
+  app.py:8582:            ocorrencias_anteriores = 0
+  app.py:8583:
+  app.py:8584:        # ----------------------------------------------------
+  app.py:8585:        # DADOS DO ESTUDANTE
+  app.py:8586:        # ----------------------------------------------------
+  app.py:8587:
+  app.py:8588:        adicionar_secao("DADOS DO ESTUDANTE")
+  app.py:8589:
+  app.py:8590:        dados_bilhete = [
+  app.py:8591:            [
+  app.py:8592:                "Nome:",
+  app.py:8593:                nome
+  app.py:8903:        elementos.append(
+  app.py:8904:            assinaturas_atraso
+  app.py:8905:        )
+  app.py:8906:
+  app.py:8907:    # ========================================================
+  app.py:8908:    # MODELO: FORA DA SALA
+  app.py:8909:    # ========================================================
+  app.py:8910:
+> app.py:8911:    elif tipo_comunicado == "saida":
+  app.py:8912:
+  app.py:8913:        adicionar_paragrafo(
+  app.py:8914:            "Prezados pais e/ou responsáveis,"
+  app.py:8915:        )
+  app.py:8916:
+  app.py:8917:        adicionar_paragrafo(
+  app.py:8918:            f"Informamos que o(a) estudante {nome}, "
+  app.py:8919:            f"matriculado(a) no {turma}, foi registrado(a) "
+  app.py:8920:            "pela escola por estar fora da sala de aula durante "
+  app.py:8921:            "o horário letivo, sem autorização ou justificativa "
+  app.py:8922:            "registrada."
+  app.py:8923:        )
+  app.py:8924:
+  app.py:8925:        adicionar_secao("REGISTRO DA SITUAÇÃO")
+  app.py:8926:
+  app.py:8927:        if data:
+  app.py:8928:            adicionar_paragrafo(
+  app.py:8929:                f"Data do registro: {data}"
+  app.py:8930:            )
+  app.py:8931:
+  app.py:9014:            "conforme as normas escolares."
+  app.py:9015:        )
+  app.py:9016:
+  app.py:9017:        adicionar_secao(
+  app.py:9018:            "TERMO DE CIÊNCIA — PERMANÊNCIA EM SALA DE AULA"
+  app.py:9019:        )
+  app.py:9020:
+  app.py:9021:        adicionar_paragrafo(
+> app.py:9022:            f"Declaro que tomei ciência do comunicado referente "
+  app.py:9023:            f"ao(à) estudante {nome}, da turma {turma}, sobre "
+  app.py:9024:            "o registro de ausência da sala de aula durante "
+  app.py:9025:            "o horário letivo, estando ciente das orientações "
+  app.py:9026:            "apresentadas e comprometendo-me a orientar o(a) "
+  app.py:9027:            "estudante quanto ao cumprimento das normas escolares."
+  app.py:9028:        )
+  app.py:9029:
+  app.py:9030:        elementos.append(
+  app.py:9031:            Spacer(1, 0.25 * cm)
+  app.py:9032:        )
+  app.py:9033:
+  app.py:9034:        termo = Table(
+  app.py:9035:            [
+  app.py:9036:                [
+  app.py:9037:                    "Nome do Responsável:",
+  app.py:9038:                    "____________________________________________"
+  app.py:9039:                ],
+  app.py:9040:                [
+  app.py:9041:                    "Assinatura:",
+  app.py:9042:                    "____________________________________________"
+  app.py:9095:
+  app.py:9096:    else:
+  app.py:9097:
+  app.py:9098:        adicionar_paragrafo(
+  app.py:9099:            "Prezados pais e/ou responsáveis,"
+  app.py:9100:        )
+  app.py:9101:
+  app.py:9102:        adicionar_paragrafo(
+> app.py:9103:            "A escola encaminha este comunicado com o objetivo "
+  app.py:9104:            "de manter a família informada sobre uma situação "
+  app.py:9105:            "registrada na rotina escolar do estudante e fortalecer "
+  app.py:9106:            "a parceria entre família e escola."
+  app.py:9107:        )
+  app.py:9108:
+  app.py:9109:        adicionar_secao(
+  app.py:9110:            "REGISTRO DA SITUAÇÃO"
+  app.py:9111:        )
+  app.py:9112:
+  app.py:9113:        if data:
+  app.py:9114:            adicionar_paragrafo(
+  app.py:9115:                f"Data do registro: {data}"
+  app.py:9116:            )
+  app.py:9117:
+  app.py:9118:        if categoria:
+  app.py:9119:            adicionar_paragrafo(
+  app.py:9120:                f"Situação registrada: {categoria}"
+  app.py:9121:            )
+  app.py:9122:
+  app.py:9123:        if professor:
+  app.py:9165:                            "• " + linha
+  app.py:9166:                        )
+  app.py:9167:
+  app.py:9168:        adicionar_secao(
+  app.py:9169:            "CIÊNCIA E ACOMPANHAMENTO"
+  app.py:9170:        )
+  app.py:9171:
+  app.py:9172:        adicionar_paragrafo(
+> app.py:9173:            "A ciência deste comunicado tem caráter informativo "
+  app.py:9174:            "e busca fortalecer o diálogo e a parceria entre "
+  app.py:9175:            "família e escola."
+  app.py:9176:        )
+  app.py:9177:
+  app.py:9178:        elementos.append(
+  app.py:9179:            Spacer(1, 0.65 * cm)
+  app.py:9180:        )
+  app.py:9181:
+  app.py:9182:        assinaturas = Table(
+  app.py:9183:            [
+  app.py:9184:                [
+  app.py:9185:                    "__________________________________",
+  app.py:9186:                    "__________________________________"
+  app.py:9187:                ],
+  app.py:9188:                [
+  app.py:9189:                    "Responsável pelo estudante",
+  app.py:9190:                    "Representante da escola"
+  app.py:9191:                ]
+  app.py:9192:            ],
+  app.py:9193:            colWidths=[
+  app.py:9222:        elementos.append(
+  app.py:9223:            assinaturas
+  app.py:9224:        )
+  app.py:9225:
+  app.py:9226:    # ========================================================
+  app.py:9227:    # OBSERVAÇÕES
+  app.py:9228:    # ========================================================
+  app.py:9229:
+> app.py:9230:    if observacoes and tipo_comunicado != "atraso":
+  app.py:9231:
+  app.py:9232:        adicionar_secao("OBSERVAÇÕES")
+  app.py:9233:
+  app.py:9234:        adicionar_paragrafo(
+  app.py:9235:            observacoes
+  app.py:9236:        )
+  app.py:9237:
+  app.py:9238:    # ========================================================
+  app.py:9239:    # RODAPÉ
+  app.py:9240:    # ========================================================
+  app.py:9241:
+  app.py:9242:    elementos.append(
+  app.py:9243:        Spacer(1, 0.4 * cm)
+  app.py:9244:    )
+  app.py:9245:
+  app.py:9246:    elementos.append(
+  app.py:9247:        Paragraph(
+  app.py:9248:            "Este documento integra o acompanhamento escolar "
+  app.py:9249:            "do estudante.",
+  app.py:9250:            estilo_centralizado
+  app.py:9859:FONTE_TUTORIA = st.session_state.FONTE_TUTORIA
+  app.py:9860:ROTAS_MENU_SUPORTADAS = {
+  app.py:9861:    normalizar_texto("🏠 Dashboard"),
+  app.py:9862:    normalizar_texto("📝 Registrar Ocorrência"),
+  app.py:9863:    normalizar_texto("🧾 Relatório dos Estudantes"),
+  app.py:9864:    normalizar_texto("🏛️ Conselho"),
+  app.py:9865:    normalizar_texto("🏆 Prova Paulista"),
+  app.py:9866:    normalizar_texto("📋 Histórico de Ocorrências"),
+> app.py:9867:    normalizar_texto("📄 Comunicado aos Pais"),
+  app.py:9868:    normalizar_texto("👥 Alunos e Turmas"),
+  app.py:9869:    normalizar_texto("👨‍🏫 Cadastrar Professores"),
+  app.py:9870:    normalizar_texto("👤 Cadastrar Assinaturas"),
+  app.py:9871:    normalizar_texto("🎨 Eletiva"),
+  app.py:9872:    normalizar_texto("🫂 Tutoria"),
+  app.py:9873:    normalizar_texto("🧾 Lista Provisória de Tutoria"),
+  app.py:9874:    normalizar_texto("📊 Gráficos e Indicadores"),
+  app.py:9875:    normalizar_texto("🖨️ Imprimir PDF"),
+  app.py:9876:    normalizar_texto("🏫 Mapa da Sala"),
+  app.py:9877:    normalizar_texto("🗺️ Mapão"),
+  app.py:9878:    normalizar_texto("📅 Agendamento de Espaços"),
+  app.py:9879:    normalizar_texto("👨‍👩‍👧 Portal do Responsável"),
+  app.py:9880:    normalizar_texto("💾 Backups"),
+  app.py:9881:}
+  app.py:9882:PAGINAS_MENU_ATIVAS = {normalizar_texto(f"{item['icone']} {item['nome']}") for item in menu_items}
+  app.py:9883:ROTAS_MENU_AUSENTES = sorted(PAGINAS_MENU_ATIVAS - ROTAS_MENU_SUPORTADAS)
+  app.py:9884:menu_normalizado = normalizar_texto(menu)
+  app.py:9885:
+  app.py:9886:if ROTAS_MENU_AUSENTES:
+  app.py:9887:    st.sidebar.error("Algumas páginas do menu estão sem rota de exibição configurada.")
+  app.py:11495:# MELHORIAS PROFISSIONAIS — CADERNO DE TUTORIA / IA / PDF / HISTÓRICO
+  app.py:11496:# Inserido automaticamente antes das rotas de páginas.
+  app.py:11497:# ======================================================
+  app.py:11498:
+  app.py:11499:# Prompt reforçado: melhora a qualidade das respostas da IA sem alterar a função existente.
+  app.py:11500:PROMPT_IA_CONVIVA_PEDAGOGICA = """
+  app.py:11501:Você é a IA Conviva Pedagógica, especialista em registros escolares da rede pública do Estado de São 
+Paulo.
+  app.py:11502:
+> app.py:11503:Você apoia professores, tutores, coordenação e gestão escolar na produção de registros pedagógicos, 
+relatórios, comunicados, pareceres e encaminhamentos.
+  app.py:11504:
+  app.py:11505:REFERÊNCIAS DE ATUAÇÃO:
+  app.py:11506:- Orientações e práticas da SEDUC-SP;
+  app.py:11507:- Plataforma Conviva Educação e Protocolo 179;
+  app.py:11508:- Estatuto da Criança e do Adolescente (ECA), com foco na dignidade e proteção integral;
+  app.py:11509:- Lei de Diretrizes e Bases da Educação Nacional (LDB), com foco na formação integral;
+  app.py:11510:- Mediação escolar, convivência, acolhimento e intervenção pedagógica;
+  app.py:11511:- Escrita profissional para prontuários, relatórios e comunicação com família.
+  app.py:11512:
+  app.py:11513:REGRAS OBRIGATÓRIAS:
+  app.py:11514:- Preserve todos os fatos informados pelo usuário.
+  app.py:11515:- Não invente fatos, datas, diagnósticos, nomes ou providências.
+  app.py:11516:- Não faça diagnóstico clínico ou psicológico.
+  app.py:11517:- Não use termos ofensivos, punitivos, discriminatórios ou humilhantes.
+  app.py:11518:- Não resuma quando a tarefa for reescrita.
+  app.py:11519:- Não responda com frases curtas ou genéricas.
+  app.py:11520:- Transforme linguagem informal em linguagem pedagógica clara, humana e objetiva.
+  app.py:11521:- Escreva sempre como registro pronto para uso escolar.
+  app.py:11522:- Quando o texto envolver dificuldade de aprendizagem, falta de foco, não entrega de atividades ou 
+resistência, relacione a escrita com acompanhamento pedagógico, organização, participação, responsabilidade e 
+estratégias de apoio.
+  app.py:11523:- Quando couber, use dois parágrafos: primeiro descrevendo a constatação observável; segundo indicando 
+encaminhamento pedagógico possível.
+  app.py:15663:    st.markdown("""
+  app.py:15664:    <div style="margin:1rem 0 1.15rem 0;padding:1rem;border-radius:10px;background:linear-gradient(135de
+g,rgba(255,255,255,.96),rgba(239,253,255,.92));border:1px solid rgba(147,197,253,.62);box-shadow:0 8px 22px 
+rgba(47,157,221,.10);">
+  app.py:15665:        <div 
+style="margin-bottom:.75rem;font-family:'Nunito',sans-serif;color:#22385f;font-size:1rem;font-weight:900;">Plataformas 
+do Sistema Conviva</div>
+  app.py:15666:        <div>
+  app.py:15667:            <div 
+style="display:grid;grid-template-columns:repeat(auto-fit,minmax(235px,1fr));gap:.6rem;">
+  app.py:15668:                <div style="min-height:58px;padding:.7rem 
+.8rem;border-radius:8px;background:#eff6ff;border-left:5px solid 
+#2563eb;display:flex;flex-direction:column;justify-content:center;"><span 
+style="color:#1e293b;font-weight:850;">Registrar Ocorrência ↗</span><span 
+style="margin-top:.2rem;color:#64748b;font-size:.83rem;">Registro rápido e padronizado</span></div>
+  app.py:15669:                <div style="min-height:58px;padding:.7rem 
+.8rem;border-radius:8px;background:#ecfdf5;border-left:5px solid 
+#059669;display:flex;flex-direction:column;justify-content:center;"><span 
+style="color:#1e293b;font-weight:850;">Caderno de Tutoria ↗</span><span 
+style="margin-top:.2rem;color:#64748b;font-size:.83rem;">Acompanhamento individual e coletivo</span></div>
+  app.py:15670:                <div style="min-height:58px;padding:.7rem 
+.8rem;border-radius:8px;background:#ecfeff;border-left:5px solid 
+#0891b2;display:flex;flex-direction:column;justify-content:center;"><span style="color:#1e293b;font-weight:850;">Lista 
+de Alunos ↗</span><span style="margin-top:.2rem;color:#64748b;font-size:.83rem;">Consulta e gestão de 
+estudantes</span></div>
+> app.py:15671:                <div style="min-height:58px;padding:.7rem 
+.8rem;border-radius:8px;background:#fff1f2;border-left:5px solid 
+#e11d48;display:flex;flex-direction:column;justify-content:center;"><span 
+style="color:#1e293b;font-weight:850;">Comunicado aos Pais ↗</span><span 
+style="margin-top:.2rem;color:#64748b;font-size:.83rem;">Geração de comunicados</span></div>
+  app.py:15672:                <div style="min-height:58px;padding:.7rem 
+.8rem;border-radius:8px;background:#f8fafc;border-left:5px solid 
+#64748b;display:flex;flex-direction:column;justify-content:center;"><span 
+style="color:#1e293b;font-weight:850;">Relatórios ↗</span><span 
+style="margin-top:.2rem;color:#64748b;font-size:.83rem;">Histórico pedagógico e evidências</span></div>
+  app.py:15673:                <div style="min-height:58px;padding:.7rem 
+.8rem;border-radius:8px;background:linear-gradient(135deg,#fff7ed,#ecfeff);border-left:5px solid 
+#a855f7;display:flex;flex-direction:column;justify-content:center;"><span style="color:#1e293b;font-weight:850;">IA 
+Conviva ↗</span><span style="margin-top:.2rem;color:#64748b;font-size:.83rem;">Reescrita pedagógica 
+humanizada</span></div>
+  app.py:15674:            </div>
+  app.py:15675:        </div>
+  app.py:15676:    </div>
+  app.py:15677:    """, unsafe_allow_html=True)
+  app.py:15678:
+  app.py:15679:    # ── Métricas Principais ───────────────────────────────────
+  app.py:15680:    total_ocorrencias = len(df_ocorrencias) if not df_ocorrencias.empty else 0
+  app.py:15681:    total_professores = len(df_professores) if not df_professores.empty else 0
+  app.py:15682:
+  app.py:15683:    # Validação de status por RA (evita duplicidade e conta somente ativos reais)
+  app.py:15684:    total_ativos = 0
+  app.py:15685:    total_transferidos = 0
+  app.py:15686:    total_transferidos_turno1 = 0
+  app.py:15687:    total_remanejados = 0
+  app.py:15688:    total_inativos = 0
+  app.py:15689:    total_outros_status = 0
+  app.py:15690:    total_duplicados_ra = 0
+  app.py:15691:    status_brutos = {}
+  app.py:18265:            c1, c2, c3 = st.columns(3)
+  app.py:18266:            c1.metric("Alunos ativos", len(base_resumo))
+  app.py:18267:            c2.metric("Turmas", base_resumo["turma"].nunique() if "turma" in base_resumo.columns else 0)
+  app.py:18268:            c3.metric("Etapas", base_resumo["etapa"].nunique() if "etapa" in base_resumo.columns else 0)
+  app.py:18269:            if "turma" in base_resumo.columns:
+  app.py:18270:                resumo_turno = base_resumo.groupby(["turno", "etapa", "turma"], 
+dropna=False).size().reset_index(name="Alunos ativos")
+  app.py:18271:                st.dataframe(resumo_turno.sort_values(["turno", "etapa", "turma"]), 
+use_container_width=True, hide_index=True)
+  app.py:18272:
+> app.py:18273:# PÁGINA 📄 COMUNICADO AOS PAIS (COMPLETA)
+  app.py:18274:# ======================================================
+  app.py:18275:
+> app.py:18276:elif menu == "📄 Comunicado aos Pais":
+  app.py:18277:    page_header(
+> app.py:18278:        "📄 Comunicado aos Pais",
+> app.py:18279:        "Gere comunicados individuais ou em lote para os responsáveis",
+  app.py:18280:        "#7c3aed"
+  app.py:18281:    )
+  app.py:18282:
+  app.py:18283:    st.markdown("""
+  app.py:18284:    <div style="
+  app.py:18285:        background:linear-gradient(135deg,#faf5ff,#ede9fe);
+  app.py:18286:        border:1.5px solid #c4b5fd;
+  app.py:18287:        border-left:5px solid #7c3aed;
+  app.py:18288:        border-radius:16px;
+  app.py:18289:        padding:1.1rem 1.5rem;
+  app.py:18290:        margin-bottom:1.25rem;
+  app.py:18291:        box-shadow:0 4px 12px rgba(124,58,237,0.08);
+  app.py:18292:    ">
+  app.py:18293:        <div style="display:flex;align-items:center;gap:0.5rem;">
+  app.py:18294:            <span>📄</span>
+  app.py:18295:            <span style="color:#4c1d95;font-size:0.875rem;">
+> app.py:18296:                Gere comunicados individuais ou em lote (ZIP) para envio aos pais e responsáveis.
+  app.py:18297:            </span>
+  app.py:18298:        </div>
+  app.py:18299:    </div>
+  app.py:18300:    """, unsafe_allow_html=True)
+  app.py:18301:
+  app.py:18302:    # ------------------------------------------------------
+> app.py:18303:    # MODELOS DE COMUNICADO
+  app.py:18304:    # ------------------------------------------------------
+  app.py:18305:
+> app.py:18306:    st.markdown("### 📋 Modelo do comunicado")
+  app.py:18307:
+> app.py:18308:    modelos_comunicado = {
+  app.py:18309:        "Atraso na entrada da escola": "atraso",
+  app.py:18310:        "Frequência e acompanhamento escolar": "faltas",
+  app.py:18311:        "Uso de dispositivos e rotina pedagógica": "celular",
+  app.py:18312:        "Convivência e respeito": "convivencia",
+  app.py:18313:        "Convivência, proteção e cultura de paz": "bullying",
+  app.py:18314:        "Segurança e permanência na escola": "saida",
+  app.py:18315:        "Acompanhamento pedagógico": "desempenho",
+> app.py:18316:        "Comunicado geral": "geral"
+  app.py:18317:    }
+  app.py:18318:
+  app.py:18319:    modelo_nome = st.selectbox(
+  app.py:18320:        "Selecione o modelo",
+> app.py:18321:        list(modelos_comunicado.keys()),
+> app.py:18322:        help="O modelo define a linguagem pedagógica utilizada no comunicado.",
+> app.py:18323:        key="modelo_comunicado_pais"
+  app.py:18324:    )
+  app.py:18325:
+> app.py:18326:    modelo_comunicado = modelos_comunicado[modelo_nome]
+  app.py:18327:
+  app.py:18328:    # ------------------------------------------------------
+  app.py:18329:    # MEDIDAS
+  app.py:18330:    # ------------------------------------------------------
+  app.py:18331:
+  app.py:18332:    medidas_opcoes = [
+  app.py:18333:        "Mediação de conflitos",
+  app.py:18334:        "Registro em ata",
+  app.py:18335:        "Notificação aos pais",
+  app.py:18336:        "Atividades de reflexão",
+  app.py:18337:        "Termo de compromisso",
+  app.py:18338:        "Ata circunstanciada",
+  app.py:18339:        "Conselho Tutelar",
+  app.py:18340:        "Mudança de turma",
+  app.py:18341:        "Acompanhamento psicológico",
+  app.py:18342:        "Reunião com pais",
+  app.py:18343:        "Afastamento temporário",
+  app.py:18344:        "B.O. registrado",
+  app.py:18345:        "Diretoria de Ensino",
+  app.py:18346:        "Medidas protetivas"
+  app.py:18351:    # ------------------------------------------------------
+  app.py:18352:
+  app.py:18353:    st.markdown("---")
+  app.py:18354:
+  app.py:18355:    modo = st.radio(
+  app.py:18356:        "Modo de geração",
+  app.py:18357:        ["👤 Individual", "🏫 Por Turma(s)"],
+  app.py:18358:        horizontal=True,
+> app.py:18359:        key="modo_geracao_comunicado"
+  app.py:18360:    )
+  app.py:18361:
+  app.py:18362:    # ======================================================
+  app.py:18363:    # INDIVIDUAL
+  app.py:18364:    # ======================================================
+  app.py:18365:
+  app.py:18366:    if modo == "👤 Individual":
+  app.py:18367:
+  app.py:18368:        st.markdown("### 👤 Seleção do estudante")
+  app.py:18369:
+  app.py:18370:        if df_alunos.empty:
+> app.py:18371:            st.warning("⚠️ Cadastre alunos antes de gerar um comunicado.")
+  app.py:18372:            st.stop()
+  app.py:18373:
+  app.py:18374:        nomes_alunos = sorted(
+  app.py:18375:            df_alunos["nome"]
+  app.py:18376:            .dropna()
+  app.py:18377:            .astype(str)
+  app.py:18378:            .str.strip()
+  app.py:18379:            .unique()
+  app.py:18380:            .tolist()
+  app.py:18381:        )
+  app.py:18382:
+  app.py:18383:        aluno_sel = st.selectbox(
+  app.py:18384:            "Buscar aluno por nome ou RA",
+  app.py:18385:            nomes_alunos,
+> app.py:18386:            key="aluno_comunicado_individual"
+  app.py:18387:        )
+  app.py:18388:
+  app.py:18389:        aluno_info = df_alunos[
+  app.py:18390:            df_alunos["nome"].astype(str).str.strip() == str(aluno_sel).strip()
+  app.py:18391:        ].iloc[0]
+  app.py:18392:
+  app.py:18393:        ra_aluno = str(aluno_info.get("ra", "")).strip()
+  app.py:18394:        nome_aluno = str(aluno_info.get("nome", "")).strip()
+  app.py:18395:        turma_aluno = str(aluno_info.get("turma", "")).strip()
+  app.py:18396:
+  app.py:18397:        if not df_ocorrencias.empty and "ra" in df_ocorrencias.columns:
+  app.py:18398:            ocorrencias_aluno = df_ocorrencias[
+  app.py:18399:                df_ocorrencias["ra"].astype(str).str.strip() == ra_aluno
+  app.py:18400:            ].copy()
+  app.py:18401:        else:
+  app.py:18402:            ocorrencias_aluno = pd.DataFrame()
+  app.py:18403:
+  app.py:18404:        # --------------------------------------------------
+  app.py:18405:        # DADOS DO ALUNO
+  app.py:18406:        # --------------------------------------------------
+  app.py:18438:                + ocorrencias_aluno["data"].astype(str)
+  app.py:18439:                + " - "
+  app.py:18440:                + ocorrencias_aluno["categoria"].astype(str)
+  app.py:18441:            )
+  app.py:18442:
+  app.py:18443:            occ_sel = st.selectbox(
+  app.py:18444:                "Selecione a ocorrência",
+  app.py:18445:                lista_ocorrencias.tolist(),
+> app.py:18446:                key="ocorrencia_comunicado_individual"
+  app.py:18447:            )
+  app.py:18448:
+  app.py:18449:            indice_occ = lista_ocorrencias.tolist().index(occ_sel)
+  app.py:18450:            occ_info = ocorrencias_aluno.iloc[indice_occ]
+  app.py:18451:
+  app.py:18452:            ocorrencia_data = {
+  app.py:18453:                "data": str(occ_info.get("data", "")),
+  app.py:18454:                "categoria": str(occ_info.get("categoria", "")),
+  app.py:18455:                "gravidade": str(occ_info.get("gravidade", "")),
+  app.py:18456:                "professor": str(occ_info.get("professor", "")),
+  app.py:18457:                "relato": str(occ_info.get("relato", "")),
+  app.py:18458:                "encaminhamento": str(occ_info.get("encaminhamento", "")),
+  app.py:18459:                "horario_chegada": str(occ_info.get("horario_chegada", "")),
+  app.py:18460:                "horario_permitido": str(occ_info.get("horario_permitido", "07:00")),
+  app.py:18461:                "justificativa": str(occ_info.get("justificativa", ""))
+  app.py:18462:            }
+  app.py:18463:
+  app.py:18464:        else:
+  app.py:18465:            st.info(
+  app.py:18466:                "ℹ️ Este aluno não possui ocorrências registradas. "
+> app.py:18467:                "Você ainda pode gerar um comunicado pedagógico, "
+  app.py:18468:                "administrativo ou geral."
+  app.py:18469:            )
+  app.py:18470:
+  app.py:18471:        # --------------------------------------------------
+  app.py:18472:        # MEDIDAS
+  app.py:18473:        # --------------------------------------------------
+  app.py:18474:
+  app.py:18475:        # ==================================================
+> app.py:18476:        # DADOS DO COMUNICADO DE ATRASO
+  app.py:18477:        # ==================================================
+  app.py:18478:
+> app.py:18479:        if modelo_comunicado == "atraso":
+  app.py:18480:
+  app.py:18481:            st.markdown("### Dados do atraso")
+  app.py:18482:
+  app.py:18483:            col_atraso_1, col_atraso_2 = st.columns(2)
+  app.py:18484:
+  app.py:18485:            with col_atraso_1:
+> app.py:18486:                horario_chegada_comunicado = st.text_input(
+  app.py:18487:                    "Hor?rio de chegada",
+  app.py:18488:                    value=str(
+  app.py:18489:                        ocorrencia_data.get("horario_chegada", "")
+  app.py:18490:                    ).strip(),
+  app.py:18491:                    placeholder="Ex.: 07:18",
+> app.py:18492:                    key="comunicado_horario_chegada"
+  app.py:18493:                )
+  app.py:18494:
+  app.py:18495:            with col_atraso_2:
+> app.py:18496:                horario_permitido_comunicado = st.text_input(
+  app.py:18497:                    "Hor?rio permitido",
+  app.py:18498:                    value=str(
+  app.py:18499:                        ocorrencia_data.get(
+  app.py:18500:                            "horario_permitido",
+  app.py:18501:                            "07:00"
+  app.py:18502:                        )
+  app.py:18503:                    ).strip() or "07:00",
+> app.py:18504:                    key="comunicado_horario_permitido"
+  app.py:18505:                )
+  app.py:18506:
+> app.py:18507:            justificativa_comunicado = st.text_area(
+  app.py:18508:                "Justificativa apresentada",
+  app.py:18509:                value=str(
+  app.py:18510:                    ocorrencia_data.get("justificativa", "")
+  app.py:18511:                ).strip(),
+  app.py:18512:                placeholder="Ex.: Transporte p?blico atrasado.",
+  app.py:18513:                height=90,
+> app.py:18514:                key="comunicado_justificativa_atraso"
+  app.py:18515:            )
+  app.py:18516:
+> app.py:18517:            atrasos_semana_comunicado = 0
+> app.py:18518:            atrasos_mes_comunicado = 0
+  app.py:18519:
+  app.py:18520:            if (
+  app.py:18521:                not ocorrencias_aluno.empty
+  app.py:18522:                and "categoria" in ocorrencias_aluno.columns
+  app.py:18523:            ):
+  app.py:18524:
+  app.py:18525:                base_atrasos = ocorrencias_aluno.copy()
+  app.py:18526:
+  app.py:18527:                categorias_atraso = (
+  app.py:18528:                    base_atrasos["categoria"]
+  app.py:18529:                    .fillna("")
+  app.py:18530:                    .astype(str)
+  app.py:18531:                    .str.upper()
+  app.py:18532:                )
+  app.py:18533:
+  app.py:18534:                base_atrasos = base_atrasos[
+  app.py:18535:                    categorias_atraso.str.contains(
+  app.py:18536:                        "ATRASO|ATRASADO|PONTUALIDADE",
+  app.py:18537:                        regex=True,
+  app.py:18538:                        na=False
+  app.py:18562:                            data_ref
+  app.py:18563:                            - pd.Timedelta(
+  app.py:18564:                                days=data_ref.weekday()
+  app.py:18565:                            )
+  app.py:18566:                        )
+  app.py:18567:
+  app.py:18568:                        inicio_mes = data_ref.replace(day=1)
+  app.py:18569:
+> app.py:18570:                        atrasos_semana_comunicado = int(
+  app.py:18571:                            (
+  app.py:18572:                                (datas >= inicio_semana)
+  app.py:18573:                                & (datas <= data_ref)
+  app.py:18574:                            ).sum()
+  app.py:18575:                        )
+  app.py:18576:
+> app.py:18577:                        atrasos_mes_comunicado = int(
+  app.py:18578:                            (
+  app.py:18579:                                (datas >= inicio_mes)
+  app.py:18580:                                & (datas <= data_ref)
+  app.py:18581:                            ).sum()
+  app.py:18582:                        )
+  app.py:18583:
+  app.py:18584:            col_contagem_1, col_contagem_2 = st.columns(2)
+  app.py:18585:
+  app.py:18586:            with col_contagem_1:
+  app.py:18587:                st.metric(
+  app.py:18588:                    "Atrasos na semana",
+> app.py:18589:                    atrasos_semana_comunicado
+  app.py:18590:                )
+  app.py:18591:
+  app.py:18592:            with col_contagem_2:
+  app.py:18593:                st.metric(
+  app.py:18594:                    "Atrasos no m?s",
+> app.py:18595:                    atrasos_mes_comunicado
+  app.py:18596:                )
+  app.py:18597:
+  app.py:18598:            ocorrencia_data["horario_chegada"] = (
+> app.py:18599:                horario_chegada_comunicado.strip()
+  app.py:18600:            )
+  app.py:18601:
+  app.py:18602:            ocorrencia_data["horario_permitido"] = (
+> app.py:18603:                horario_permitido_comunicado.strip()
+  app.py:18604:                or "07:00"
+  app.py:18605:            )
+  app.py:18606:
+  app.py:18607:            ocorrencia_data["justificativa"] = (
+> app.py:18608:                justificativa_comunicado.strip()
+  app.py:18609:            )
+  app.py:18610:
+  app.py:18611:            ocorrencia_data["atrasos_semana"] = (
+> app.py:18612:                atrasos_semana_comunicado
+  app.py:18613:            )
+  app.py:18614:
+  app.py:18615:            ocorrencia_data["atrasos_mes"] = (
+> app.py:18616:                atrasos_mes_comunicado
+  app.py:18617:            )
+  app.py:18618:
+  app.py:18619:        st.subheader("⚖️ Medidas Aplicadas")
+  app.py:18620:
+  app.py:18621:        medidas_aplicadas = []
+  app.py:18622:
+  app.py:18623:        cols = st.columns(3)
+  app.py:18624:
+  app.py:18625:        for i, medida in enumerate(medidas_opcoes):
+  app.py:18626:            with cols[i % 3]:
+  app.py:18627:                if st.checkbox(
+  app.py:18628:                    medida,
+> app.py:18629:                    key=f"medida_ind_{modelo_comunicado}_{medida}"
+  app.py:18630:                ):
+  app.py:18631:                    medidas_aplicadas.append(medida)
+  app.py:18632:
+  app.py:18633:        # --------------------------------------------------
+  app.py:18634:        # OBSERVAÇÕES
+  app.py:18635:        # --------------------------------------------------
+  app.py:18636:
+  app.py:18637:        observacoes = st.text_area(
+  app.py:18638:            "📝 Observações adicionais",
+  app.py:18639:            height=100,
+> app.py:18640:            key="observacoes_comunicado_individual",
+
+

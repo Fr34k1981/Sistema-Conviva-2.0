@@ -43,6 +43,10 @@ st.set_page_config(
     page_icon="🧾",
 )
 
+from src.access_control import require_access
+
+require_access("staff")
+
 st.markdown(
     """
     <style>

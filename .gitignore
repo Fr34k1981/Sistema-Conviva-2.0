@@ -36,6 +36,7 @@ pip-delete-this-directory.txt
 
 # CSV (dados dos alunos - não precisa subir)
 *.csv
+data/
 
 # Backup
 *.BACKUP*
@@ -43,6 +44,15 @@ pip-delete-this-directory.txt
 *~
 app.py.BACKUP_SEGURO_*
 data/backups/
+data/backups_*/
+data/tutoria_backups/
+data/backup_extraido/
+data/**/*.xlsx
+data/**/*.xls
+data/**/*.dump
+data/tutoria_cadastro.json
+data/relatorios_estudantes_local.json
+data/turmas_config_local.json
 
 # Sistema
 .DS_Store
@@ -57,3 +67,5 @@ htmlcov/
 data/.conviva_cache/
 data/cache/
 *.tmp
+
+.streamlit/secrets.toml
