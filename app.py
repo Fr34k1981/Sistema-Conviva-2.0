@@ -7348,6 +7348,7 @@ def carregar_tutoria_supabase_segura(motivo: str = "carregar tutoria") -> pd.Dat
     return pd.DataFrame()
 
 
+@st.cache_data(ttl=900, show_spinner=False)
 def carregar_tutoria_referencias_supabase_segura() -> dict:
     """Carrega metadados de responsáveis se a tabela existir; nunca apaga vínculos."""
     if not SUPABASE_VALID:
@@ -7410,6 +7411,7 @@ def _extrair_dict_tutoria_de_backup_objeto(obj) -> dict:
     return {}
 
 
+@st.cache_data(ttl=900, show_spinner=False)
 def carregar_tutoria_backups_json_supabase_segura() -> dict:
     """Recupera vínculos da tabela public.tutoria_backups_json, quando existir.
 
@@ -7463,11 +7465,13 @@ def salvar_tutoria_backup_json_supabase_seguro(tutoria_dict: dict, origem: str =
     }
 
     try:
-        _supabase_request(
+        resposta = _supabase_request(
             "POST",
             "tutoria_backups_json",
             json=payload,
         )
+        if resposta.status_code < 400:
+            carregar_tutoria_backups_json_supabase_segura.clear()
     except Exception as e:
         logger.warning(
             f"Nao foi possivel salvar backup JSON da tutoria: {e}"
