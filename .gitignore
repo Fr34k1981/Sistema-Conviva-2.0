@@ -53,6 +53,34 @@ data/**/*.dump
 data/tutoria_cadastro.json
 data/relatorios_estudantes_local.json
 data/turmas_config_local.json
+data/backup_extraido/
+app.py.backup*
+app_antes_*.py
+app_backup.py
+app_corrompido_backup_*.py
+01_criar_tabelas.sql.backup*
+requirements.backup*
+Backup.sql
+*.dump
+_fix_*.py
+_grade_*.py
+_almoco_todos.py
+_analise_funcoes.py
+_comunicado_multi_branco.py
+_fase2_comunicados.py
+_horarios_cafe_almoco.py
+_import_grade_*.py
+_insere_*.py
+_pdf_branco_vazio.py
+_presenca_print.py
+_restaura_atraso.py
+_trecho_gerar_pdf.txt
+check.py
+diagnostico*.py
+erro_inicializacao_conviva.txt
+fix.py
+localizacao_comunicado_atual.txt
+localizacao_criterios_comunicado.txt
 
 # Sistema
 .DS_Store
