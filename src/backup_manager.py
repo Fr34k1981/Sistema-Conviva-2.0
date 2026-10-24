@@ -32,6 +32,21 @@ class BackupManager:
         return self.project_root / caminho
 
     @staticmethod
+    def limpar_backups_tutoria(backup_dir: str | Path, limite: int = 20) -> None:
+        backup_dir = Path(backup_dir)
+        limite = max(1, int(limite))
+        backups = sorted(
+            backup_dir.glob("tutoria_backup_*.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        for backup in backups[limite:]:
+            try:
+                backup.unlink()
+            except OSError as e:
+                print(f"Nao foi possivel remover backup antigo da Tutoria: {type(e).__name__}")
+
+    @staticmethod
     def _nome_seguro(valor: str | None) -> str:
         valor = str(valor or "").strip()
         if not valor:

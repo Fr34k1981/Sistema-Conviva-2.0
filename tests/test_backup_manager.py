@@ -1,5 +1,7 @@
 import tempfile
 import unittest
+import os
+from datetime import datetime
 from pathlib import Path
 
 from src.backup_manager import BackupManager
@@ -22,6 +24,22 @@ class BackupManagerIgnoreTests(unittest.TestCase):
 
             candidate = root / "data" / "tutoria_cadastro.json"
             self.assertFalse(manager._deve_ignorar(candidate))
+
+    def test_tutoria_retention_keeps_the_newest_snapshots(self):
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            backup_dir = Path(temporary_dir)
+            now = datetime.now().timestamp()
+            for index in range(5):
+                backup = backup_dir / f"tutoria_backup_{index}.json"
+                backup.write_text(str(index), encoding="utf-8")
+                backup.touch()
+                import os
+                os.utime(backup, (now - index, now - index))
+
+            BackupManager.limpar_backups_tutoria(backup_dir, limite=3)
+
+            remaining = sorted(path.read_text(encoding="utf-8") for path in backup_dir.glob("*.json"))
+            self.assertEqual(remaining, ["0", "1", "2"])
 
 
 if __name__ == "__main__":
