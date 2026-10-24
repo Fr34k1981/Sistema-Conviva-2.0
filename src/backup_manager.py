@@ -37,7 +37,7 @@ class BackupManager:
         limite = max(1, int(limite))
         backups = sorted(
             backup_dir.glob("tutoria_backup_*.json"),
-            key=lambda path: path.stat().st_mtime,
+            key=lambda path: path.name,
             reverse=True,
         )
         for backup in backups[limite:]:

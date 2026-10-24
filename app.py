@@ -2844,13 +2844,16 @@ def salvar_tutoria_local(tutoria_dict: dict):
         if total_antigo > 0 and total_novo == 0:
             logger.warning("Protecao Tutoria: bloqueado salvar cache vazio por cima de cache com estudantes.")
             return
+        if base_antiga == base_nova:
+            return
 
         if os.path.exists(TUTORIA_CACHE_ARQUIVO):
             try:
                 backup_dir = DATA_DIR / "tutoria_backups"
                 backup_dir.mkdir(parents=True, exist_ok=True)
-                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
                 shutil.copy2(TUTORIA_CACHE_ARQUIVO, backup_dir / f"tutoria_backup_{stamp}.json")
+                BackupManager.limpar_backups_tutoria(backup_dir, limite=20)
             except Exception as e:
                 logger.warning(f"Nao foi possivel criar backup local da tutoria: {e}")
 
