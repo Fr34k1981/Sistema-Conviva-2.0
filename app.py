@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.express as px
 import random
 import html
+from collections import Counter
+from functools import lru_cache
 from datetime import datetime, timedelta
 from io import BytesIO, StringIO
 from difflib import SequenceMatcher
@@ -2484,6 +2486,9 @@ for item in menu_items:
 
 # Atualizar a variável menu
 menu = st.session_state.pagina_atual
+if menu == "🧾 Lista Provisória de Tutoria":
+    st.session_state.pagina_atual = "🏠 Dashboard"
+    st.switch_page("pages/Lista_Provisoria_Tutoria.py")
 
 # Cabeçalho global no padrão SED para páginas internas.
 def _render_sed_header_global(pagina_atual: str):
@@ -2819,6 +2824,7 @@ def carregar_tutoria_local(fallback: dict | None = None) -> dict:
     except Exception as e:
         logger.error(f"Erro ao carregar cache local da tutoria: {e}")
     return normalizar_base_tutoria(fallback or {})
+
 
 def salvar_tutoria_local(tutoria_dict: dict):
     """Salva a Tutoria localmente com backup automático antes de sobrescrever.
@@ -7409,18 +7415,22 @@ def _extrair_dict_tutoria_de_backup_objeto(obj) -> dict:
                 return converter_tutoria_supabase_para_dict(pd.DataFrame(obj))
             return {}
         if isinstance(obj, dict):
-            # Formato direto: {"Tutor": {"alunos": [...]}}
-            direto = normalizar_base_tutoria(obj)
-            if total_estudantes_tutoria(direto) > 0:
-                return direto
-            # Formatos comuns: {"tutoria": {...}}, {"dados": {...}}, {"backup": {...}}
-            for chave in ["tutoria", "TUTORIA", "dados", "data", "backup", "conteudo", "json", "payload", "registros"]:
+            chaves_aninhadas = ["tutoria", "TUTORIA", "dados", "data", "backup", "conteudo", "json", "payload", "registros"]
+            tem_chave_aninhada = any(chave in obj for chave in chaves_aninhadas)
+            for chave in chaves_aninhadas:
                 if chave in obj:
                     convertido = _extrair_dict_tutoria_de_backup_objeto(obj.get(chave))
                     if total_estudantes_tutoria(convertido) > 0:
                         return convertido
+            # Formato direto: {"Tutor": {"alunos": [...]}}
+            if not tem_chave_aninhada and any(isinstance(valor, (dict, list)) for valor in obj.values()):
+                direto = normalizar_base_tutoria(obj)
+                if total_estudantes_tutoria(direto) > 0:
+                    return direto
             # Se o dicionário for uma linha de tabela, tenta cada coluna.
             for valor in obj.values():
+                if not isinstance(valor, (dict, list, str)):
+                    continue
                 convertido = _extrair_dict_tutoria_de_backup_objeto(valor)
                 if total_estudantes_tutoria(convertido) > 0:
                     return convertido
@@ -12203,12 +12213,156 @@ def _calcular_pontuacao_estudante_em_bases(nome: str, ra: str = "", turma: str =
     }
 
 
-def _ranking_pontuacao_turma(df_alunos_turma: pd.DataFrame) -> pd.DataFrame:
+def _preparar_indice_ranking(
+    df: pd.DataFrame | None,
+) -> tuple[
+    pd.DataFrame,
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+    dict[str, tuple[str, ...]],
+    dict[str, dict[str, tuple[int, ...]]],
+    dict[str, dict[str, tuple[int, ...]]],
+    dict[str, dict[str, tuple[int, ...]]],
+    tuple[int, ...],
+]:
+    base = df.copy().reset_index(drop=True) if isinstance(df, pd.DataFrame) else pd.DataFrame()
+    nomes = {
+        col: tuple(base[col].fillna("").astype(str).apply(_normalizar_chave_estudante))
+        for col in ["Estudante", "estudante", "aluno", "Aluno", "nome", "Nome"]
+        if col in base.columns
+    }
+    ras = {
+        col: tuple(base[col].fillna("").astype(str).apply(_normalizar_ra_estudante))
+        for col in ["RA", "ra", "NR RA", "nr_ra"]
+        if col in base.columns
+    }
+    turmas = {
+        col: tuple(base[col].fillna("").astype(str).apply(normalizar_texto))
+        for col in ["Turma", "turma"]
+        if col in base.columns
+    }
+
+    def mapear_indices(colunas: dict[str, tuple[str, ...]]) -> dict[str, dict[str, tuple[int, ...]]]:
+        indices: dict[str, dict[str, tuple[int, ...]]] = {}
+        for col, valores in colunas.items():
+            por_valor: dict[str, list[int]] = {}
+            for posicao, valor in enumerate(valores):
+                if valor:
+                    por_valor.setdefault(valor, []).append(posicao)
+            indices[col] = {valor: tuple(posicoes) for valor, posicoes in por_valor.items()}
+        return indices
+
+    return (
+        base,
+        nomes,
+        ras,
+        turmas,
+        mapear_indices(nomes),
+        mapear_indices(ras),
+        mapear_indices(turmas),
+        tuple(range(len(base))),
+    )
+
+
+@lru_cache(maxsize=4096)
+def _contagem_caracteres_ranking(valor: str) -> dict[str, int]:
+    return dict(Counter(valor))
+
+
+def _filtrar_indice_ranking(
+    indice: tuple[
+        pd.DataFrame,
+        dict[str, tuple[str, ...]],
+        dict[str, tuple[str, ...]],
+        dict[str, tuple[str, ...]],
+        dict[str, dict[str, tuple[int, ...]]],
+        dict[str, dict[str, tuple[int, ...]]],
+        dict[str, dict[str, tuple[int, ...]]],
+        tuple[int, ...],
+    ],
+    nome: str,
+    ra: str,
+    turma: str,
+) -> pd.DataFrame:
+    base, nomes, ras, turmas, indices_nomes, indices_ras, indices_turmas, todas_as_linhas = indice
+    if base.empty:
+        return pd.DataFrame()
+
+    candidatos = todas_as_linhas
+    turma_filtrada = False
+    turma_norm = normalizar_texto(turma)
+    if turma_norm:
+        for coluna_turma in turmas:
+            posicoes_turma = indices_turmas[coluna_turma].get(turma_norm, ())
+            if posicoes_turma:
+                candidatos = posicoes_turma
+                turma_filtrada = True
+            break
+
+    ra_norm = _normalizar_ra_estudante(ra)
+    nome_norm = _normalizar_chave_estudante(nome)
+    if ra_norm:
+        for coluna_ra in ras:
+            posicoes_ra = set(indices_ras[coluna_ra].get(ra_norm, ()))
+            encontrados = [posicao for posicao in candidatos if posicao in posicoes_ra]
+            if encontrados:
+                return base.iloc[encontrados]
+
+    if nome_norm:
+        for coluna_nome, valores_nome in nomes.items():
+            posicoes_exatas = set(indices_nomes[coluna_nome].get(nome_norm, ()))
+            exatos = [posicao for posicao in candidatos if posicao in posicoes_exatas]
+            if exatos:
+                return base.iloc[exatos]
+
+            contidos = [
+                posicao for posicao in candidatos
+                if (valor := valores_nome[posicao]) and (valor in nome_norm or nome_norm in valor)
+            ]
+            if contidos:
+                return base.iloc[contidos]
+
+            caracteres_nome = _contagem_caracteres_ranking(nome_norm)
+            scores = {}
+            for posicao in candidatos:
+                valor = valores_nome[posicao]
+                if not valor:
+                    continue
+                # O multiconjunto de caracteres limita a maior similaridade possível.
+                caracteres_compartilhados = sum(
+                    min(quantidade, caracteres_nome.get(caractere, 0))
+                    for caractere, quantidade in _contagem_caracteres_ranking(valor).items()
+                )
+                limite_superior = (2 * caracteres_compartilhados) / (len(valor) + len(nome_norm))
+                if limite_superior >= 0.82:
+                    scores[posicao] = SequenceMatcher(None, valor, nome_norm).ratio()
+            if scores and max(scores.values()) >= 0.82:
+                maior_score = max(scores.values())
+                return base.iloc[[posicao for posicao, score in scores.items() if score >= maior_score]]
+            break
+
+    if turma_filtrada:
+        return _filtrar_indice_ranking(indice, nome, ra, "")
+    return pd.DataFrame()
+
+
+def _ranking_pontuacao_turma(
+    df_alunos_turma: pd.DataFrame,
+    df_mapao_base: pd.DataFrame | None = None,
+    df_pp_base: pd.DataFrame | None = None,
+    df_oc_base: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     if df_alunos_turma is None or df_alunos_turma.empty:
         return pd.DataFrame()
-    df_mapao_base = _dataframe_seguro_carregador("mapao")
-    df_pp_base = _dataframe_seguro_carregador("prova_paulista")
-    df_oc_base = _dataframe_seguro_carregador("ocorrencias")
+    if df_mapao_base is None:
+        df_mapao_base = _dataframe_seguro_carregador("mapao")
+    if df_pp_base is None:
+        df_pp_base = _dataframe_seguro_carregador("prova_paulista")
+    if df_oc_base is None:
+        df_oc_base = _dataframe_seguro_carregador("ocorrencias")
+    indice_mapao = _preparar_indice_ranking(df_mapao_base)
+    indice_pp = _preparar_indice_ranking(df_pp_base)
+    indice_ocorrencias = _preparar_indice_ranking(df_oc_base)
     linhas = []
     for _, aluno in df_alunos_turma.iterrows():
         nome = str(aluno.get("nome", "") or "").strip()
@@ -12218,9 +12372,9 @@ def _ranking_pontuacao_turma(df_alunos_turma: pd.DataFrame) -> pd.DataFrame:
             nome,
             ra,
             turma,
-            _filtrar_aluno_df(df_mapao_base, nome, ra, turma),
-            _filtrar_aluno_df(df_pp_base, nome, ra, turma),
-            _filtrar_aluno_df(df_oc_base, nome, ra, turma),
+            _filtrar_indice_ranking(indice_mapao, nome, ra, turma),
+            _filtrar_indice_ranking(indice_pp, nome, ra, turma),
+            _filtrar_indice_ranking(indice_ocorrencias, nome, ra, turma),
         )
         linhas.append({
             "Estudante": nome,
@@ -12247,7 +12401,13 @@ def _ranking_pontuacao_turma(df_alunos_turma: pd.DataFrame) -> pd.DataFrame:
     return ranking
 
 
-def _ranking_pontuacao_geral(df_alunos_base: pd.DataFrame | None = None) -> pd.DataFrame:
+def _ranking_pontuacao_geral(
+    df_alunos_base: pd.DataFrame | None = None,
+    *,
+    df_mapao_base: pd.DataFrame | None = None,
+    df_pp_base: pd.DataFrame | None = None,
+    df_oc_base: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Ranking gamificado de todos os estudantes, limitado a 100 pontos."""
     if df_alunos_base is None:
         df_alunos_base = globals().get("df_alunos", pd.DataFrame())
@@ -12259,6 +12419,11 @@ def _ranking_pontuacao_geral(df_alunos_base: pd.DataFrame | None = None) -> pd.D
 def _ranking_pontuacao_turmas(df_alunos_base: pd.DataFrame | None = None) -> pd.DataFrame:
     """Ranking justo das salas: usa média da pontuação dos estudantes, não soma bruta."""
     ranking = _ranking_pontuacao_geral(df_alunos_base)
+    return _resumir_ranking_pontuacao_turmas(ranking)
+
+
+def _resumir_ranking_pontuacao_turmas(ranking: pd.DataFrame) -> pd.DataFrame:
+    """Resume um ranking de estudantes sem recalcular suas pontuações."""
     if ranking.empty or "Turma" not in ranking.columns:
         return pd.DataFrame()
     base = ranking.copy()
@@ -14718,7 +14883,13 @@ def _filtrar_aluno_df(df: pd.DataFrame, nome: str, ra: str = "", turma: str = ""
     return pd.DataFrame()
 
 
-def _ranking_pontuacao_geral(df_alunos_base: pd.DataFrame | None = None) -> pd.DataFrame:
+def _ranking_pontuacao_geral(
+    df_alunos_base: pd.DataFrame | None = None,
+    *,
+    df_mapao_base: pd.DataFrame | None = None,
+    df_pp_base: pd.DataFrame | None = None,
+    df_oc_base: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """Ranking gamificado geral com base nos alunos cadastrados e nas fontes já salvas.
 
     Inclui estudantes que aparecem no Mapão/Prova Paulista mesmo quando a lista de
@@ -14742,8 +14913,11 @@ def _ranking_pontuacao_geral(df_alunos_base: pd.DataFrame | None = None) -> pd.D
                 base_alunos[col] = ""
         bases.append(base_alunos[["Estudante", "RA", "Turma"]])
 
-    for carregador in ["prova_paulista", "mapao"]:
-        df_src = _dataframe_seguro_carregador(carregador)
+    if df_pp_base is None:
+        df_pp_base = _dataframe_seguro_carregador("prova_paulista")
+    if df_mapao_base is None:
+        df_mapao_base = _dataframe_seguro_carregador("mapao")
+    for df_src in [df_pp_base, df_mapao_base]:
         if isinstance(df_src, pd.DataFrame) and not df_src.empty:
             src = df_src.copy()
             for col in ["Estudante", "RA", "Turma"]:
@@ -14765,7 +14939,12 @@ def _ranking_pontuacao_geral(df_alunos_base: pd.DataFrame | None = None) -> pd.D
     base = base.drop_duplicates(subset=["_chave_ra", "_chave_nome", "_chave_turma"], keep="last")
     base = base.drop(columns=["_chave_nome", "_chave_ra", "_chave_turma"], errors="ignore")
 
-    ranking = _ranking_pontuacao_turma(base.rename(columns={"Estudante": "nome", "RA": "ra", "Turma": "turma"}))
+    ranking = _ranking_pontuacao_turma(
+        base.rename(columns={"Estudante": "nome", "RA": "ra", "Turma": "turma"}),
+        df_mapao_base=df_mapao_base,
+        df_pp_base=df_pp_base,
+        df_oc_base=df_oc_base,
+    )
     if ranking.empty:
         return ranking
     # Não deixa estudantes sem nenhum dado pedagógico dominarem o ranking apenas com os 20 pontos de convivência.
@@ -15826,8 +16005,15 @@ if menu == "🏠 Dashboard":
     </div>
     """, unsafe_allow_html=True)
 
-    ranking_game_dashboard = _ranking_pontuacao_geral(df_alunos)
-    ranking_salas_dashboard = _ranking_pontuacao_turmas(df_alunos)
+    df_pp_dashboard = _dataframe_seguro_carregador("prova_paulista")
+    df_mapao_dashboard = _dataframe_seguro_carregador("mapao")
+    ranking_game_dashboard = _ranking_pontuacao_geral(
+        df_alunos,
+        df_mapao_base=df_mapao_dashboard,
+        df_pp_base=df_pp_dashboard,
+        df_oc_base=df_ocorrencias,
+    )
+    ranking_salas_dashboard = _resumir_ranking_pontuacao_turmas(ranking_game_dashboard)
     st.markdown("""
     <div style="display:flex; align-items:center; gap:0.5rem; margin:1.15rem 0 0.75rem 0;">
         <div style="width:4px; height:22px; background:linear-gradient(180deg,#22c55e,#0ea5e9); border-radius:4px;"></div>
@@ -15838,7 +16024,7 @@ if menu == "🏠 Dashboard":
         st.info("Assim que houver Mapão, Prova Paulista ou ocorrências, o ranking gamificado aparece aqui.")
     else:
         try:
-            st.caption(f"Fontes carregadas para a gamificação: Prova Paulista {_dataframe_seguro_carregador('prova_paulista').shape[0]} registro(s) · Mapão {_dataframe_seguro_carregador('mapao').shape[0]} registro(s) · Ocorrências {_dataframe_seguro_carregador('ocorrencias').shape[0]} registro(s).")
+            st.caption(f"Fontes carregadas para a gamificação: Prova Paulista {df_pp_dashboard.shape[0]} registro(s) · Mapão {df_mapao_dashboard.shape[0]} registro(s) · Ocorrências {df_ocorrencias.shape[0]} registro(s).")
         except Exception:
             pass
         col_rank_alunos, col_rank_salas = st.columns([1.35, 1])
@@ -25488,19 +25674,6 @@ else:
     if st.button("Voltar para o Dashboard", type="primary", key="voltar_dashboard_fallback"):
         st.session_state.pagina_atual = "🏠 Dashboard"
         st.rerun()
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
